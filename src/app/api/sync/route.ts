@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
 // Server-side in-memory store initialized with real user schedule state from Oct 19-22, 2026
 const serverSyncState = {
@@ -113,8 +114,55 @@ export async function GET(req: NextRequest) {
   const since = searchParams.get("since");
   const sinceTs = since ? parseInt(since, 10) : 0;
 
+  // If Supabase is configured, fetch persistent records from PostgreSQL
+  if (isSupabaseConfigured) {
+    try {
+      const [progRes, recRes, assessRes, customRes] = await Promise.all([
+        supabase.from("task_progress").select("*"),
+        supabase.from("recovery_assignments").select("*"),
+        supabase.from("assessment_results").select("*"),
+        supabase.from("custom_tasks").select("*"),
+      ]);
+
+      if (!progRes.error && progRes.data && progRes.data.length > 0) {
+        serverSyncState.progress = progRes.data.map((p) => ({
+          taskId: p.task_id,
+          originalDate: p.original_date,
+          isCompleted: p.is_completed,
+          completedAtTimestamp: p.completed_at ? new Date(p.completed_at).getTime() : null,
+          completionType: p.completion_type,
+          notes: p.notes || "",
+        }));
+      }
+
+      if (!recRes.error && recRes.data && recRes.data.length > 0) {
+        serverSyncState.recoveries = recRes.data.map((r) => ({
+          id: r.id,
+          taskId: r.task_id,
+          originalDate: r.original_date,
+          recoveryDate: r.recovery_date,
+          assignedAtTimestamp: r.assigned_at ? new Date(r.assigned_at).getTime() : Date.now(),
+          isCompleted: r.is_completed,
+          priorityLevel: r.priority_level || 2,
+          status: r.status,
+        }));
+      }
+
+      if (!assessRes.error && assessRes.data && assessRes.data.length > 0) {
+        serverSyncState.assessments = assessRes.data;
+      }
+
+      if (!customRes.error && customRes.data && customRes.data.length > 0) {
+        serverSyncState.customTasks = customRes.data;
+      }
+    } catch {
+      // Fallback to in-memory state on query failure
+    }
+  }
+
   return NextResponse.json({
     status: "ok",
+    backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
     hasUpdates: serverSyncState.lastUpdated > sinceTs,
     timestamp: serverSyncState.lastUpdated,
     data: serverSyncState,
@@ -171,8 +219,42 @@ export async function POST(req: NextRequest) {
 
     serverSyncState.lastUpdated = Date.now();
 
+    // If Supabase is configured, asynchronously persist to PostgreSQL
+    if (isSupabaseConfigured) {
+      try {
+        if (Array.isArray(progress) && progress.length > 0) {
+          const rows = progress.map((p) => ({
+            task_id: p.taskId,
+            original_date: p.originalDate,
+            is_completed: p.isCompleted,
+            completed_at: p.completedAtTimestamp ? new Date(p.completedAtTimestamp).toISOString() : null,
+            completion_type: p.completionType,
+            notes: p.notes || "",
+            updated_at: new Date().toISOString(),
+          }));
+          await supabase.from("task_progress").upsert(rows, { onConflict: "task_id" });
+        }
+
+        if (Array.isArray(recoveries) && recoveries.length > 0) {
+          const rows = recoveries.map((r) => ({
+            task_id: r.taskId,
+            original_date: r.originalDate,
+            recovery_date: r.recoveryDate,
+            is_completed: r.isCompleted,
+            priority_level: r.priorityLevel || 2,
+            status: r.status,
+            updated_at: new Date().toISOString(),
+          }));
+          await supabase.from("recovery_assignments").upsert(rows, { onConflict: "task_id" });
+        }
+      } catch (dbErr) {
+        console.warn("Supabase background upsert error", dbErr);
+      }
+    }
+
     return NextResponse.json({
       status: "synced",
+      backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
       timestamp: serverSyncState.lastUpdated,
       serverVersion: 1,
       data: serverSyncState,
