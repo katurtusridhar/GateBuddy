@@ -82,6 +82,30 @@ export function TaskCard({ task, onToggleComplete, onOpenReschedule }: TaskCardP
     return `Core GATE CSE lecture • Slot ${task.slot} • +10 points`;
   })();
 
+  // Strict Reschedule rule matching Android: Rescheduling is strictly for lectures only.
+  // Never for Daily Problem Solving, Daily Revision, Boosters, Sunday Tests, or Custom tasks.
+  const isCoreLecture =
+    !task.isBooster &&
+    !task.isRevision &&
+    !task.isSundayActivity &&
+    !task.isCustom &&
+    task.type !== "SUNDAY_TEST" &&
+    task.type !== "SUNDAY_PYQ" &&
+    task.type !== "BOOSTER_PROBLEM_SOLVING" &&
+    task.type !== "BOOSTER_REVISION" &&
+    !task.title.toLowerCase().includes("problem solving") &&
+    !task.title.toLowerCase().includes("daily revision") &&
+    !task.title.toLowerCase().includes("booster") &&
+    !task.title.toLowerCase().includes("sunday test") &&
+    !task.title.toLowerCase().includes("pyq") &&
+    !task.subject.toLowerCase().includes("problem solving") &&
+    !task.subject.toLowerCase().includes("daily revision") &&
+    !task.subject.toLowerCase().includes("booster");
+
+  const canReschedule =
+    isCoreLecture &&
+    (task.isAssignedForRecovery || task.status === "MISSED" || task.status === "RECOVERY_SCHEDULED");
+
   return (
     <div
       className={clsx(
@@ -183,7 +207,7 @@ export function TaskCard({ task, onToggleComplete, onOpenReschedule }: TaskCardP
       </div>
 
       {/* Rescheduled Banner (Matching Android Screenshot with Change Button) */}
-      {(task.isAssignedForRecovery || task.status === "RECOVERY_SCHEDULED") && task.recoveryDate && (
+      {canReschedule && (task.isAssignedForRecovery || task.status === "RECOVERY_SCHEDULED") && task.recoveryDate && (
         <div className="mt-3 flex items-center justify-between rounded-xl border border-amber-500/50 bg-[#451A03]/40 px-3 py-2 text-xs font-semibold text-amber-300">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-amber-400 shrink-0" />
@@ -205,12 +229,12 @@ export function TaskCard({ task, onToggleComplete, onOpenReschedule }: TaskCardP
         </div>
       )}
 
-      {/* Reschedule Call-to-Action for Past Missed Backlog */}
-      {!task.isAssignedForRecovery && task.status === "MISSED" && onOpenReschedule && (
+      {/* Reschedule Call-to-Action for Past Missed Backlog (Strictly Core Lectures Only) */}
+      {canReschedule && !task.isAssignedForRecovery && task.status === "MISSED" && onOpenReschedule && (
         <div className="mt-3 flex items-center justify-between rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-xs font-semibold text-rose-300">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-rose-400 shrink-0" />
-            <span>Backlog: Tap to assign recovery date</span>
+            <span>Lecture Backlog: Tap to assign recovery date</span>
           </div>
           <button
             onClick={onOpenReschedule}

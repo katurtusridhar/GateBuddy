@@ -16,6 +16,10 @@ import {
   ShieldAlert,
   ArrowRight,
   Target,
+  KeyRound,
+  ShieldCheck,
+  X,
+  CheckCircle2,
 } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
@@ -34,10 +38,53 @@ export default function DashboardPage() {
     progress,
     customTasks,
     settings,
+    credentials,
+    changeCredentials,
   } = useApp();
 
   const [taskToReschedule, setTaskToReschedule] = useState<TaskItemUi | null>(null);
   const [showBatchModal, setShowBatchModal] = useState(false);
+
+  // Credentials Update Modal State
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const [masterCodeInput, setMasterCodeInput] = useState("");
+  const [newUsernameInput, setNewUsernameInput] = useState(credentials.username || "katurtusridhar");
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState("");
+  const [credsError, setCredsError] = useState<string | null>(null);
+  const [credsSuccess, setCredsSuccess] = useState(false);
+  const [isUpdatingCreds, setIsUpdatingCreds] = useState(false);
+
+  const handleUpdateCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCredsError(null);
+
+    if (newPasswordInput && newPasswordInput !== confirmPasswordInput) {
+      setCredsError("New password and confirm password do not match.");
+      return;
+    }
+
+    setIsUpdatingCreds(true);
+    const res = await changeCredentials(
+      newUsernameInput.trim() || credentials.username,
+      newPasswordInput.trim() || credentials.password,
+      masterCodeInput.trim()
+    );
+
+    if (res.success) {
+      setCredsSuccess(true);
+      setTimeout(() => {
+        setCredsSuccess(false);
+        setShowCredentialsModal(false);
+        setMasterCodeInput("");
+        setNewPasswordInput("");
+        setConfirmPasswordInput("");
+      }, 1500);
+    } else {
+      setCredsError(res.error || "Invalid master authorization code.");
+    }
+    setIsUpdatingCreds(false);
+  };
 
   const todayTasks = useMemo(() => getTasksForDate(todayDateStr), [getTasksForDate, todayDateStr]);
 
@@ -106,6 +153,17 @@ export default function DashboardPage() {
               <Target className="h-4 w-4" />
               <span>Score Today: +{dailyScore.dailyPoints} pts</span>
             </div>
+            <button
+              onClick={() => {
+                setNewUsernameInput(credentials.username || "katurtusridhar");
+                setShowCredentialsModal(true);
+              }}
+              className="flex items-center gap-2 rounded-xl border border-sky-500/40 bg-[#151F32] px-4 py-2 text-xs font-bold text-sky-300 hover:bg-sky-950/60 transition shadow-sm"
+              title="Change Username or Password with Master Code"
+            >
+              <KeyRound className="h-4 w-4 text-sky-400" />
+              <span>Change Credentials</span>
+            </button>
           </div>
         </div>
 
@@ -270,6 +328,110 @@ export default function DashboardPage() {
             onDismiss={() => setShowBatchModal(false)}
             onConfirmAll={async (assignments) => batchReschedule(assignments)}
           />
+        )}
+
+        {/* Modal: Change Username & Password via Master Code */}
+        {showCredentialsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-[#26354F] bg-[#0F172A] p-6 shadow-2xl">
+              <div className="flex items-center justify-between border-b border-[#26354F]/80 pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-amber-400" />
+                  <h3 className="text-base font-bold text-white">Change Credentials</h3>
+                </div>
+                <button
+                  onClick={() => setShowCredentialsModal(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {credsError && (
+                <div className="mt-4 rounded-xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-300">
+                  {credsError}
+                </div>
+              )}
+
+              {credsSuccess && (
+                <div className="mt-4 flex items-center gap-2 rounded-xl border border-emerald-500/50 bg-emerald-950/40 p-3 text-xs text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <span>Credentials updated successfully!</span>
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateCredentials} className="mt-4 space-y-4">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                    Master Authorization Code (Required)
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={masterCodeInput}
+                    onChange={(e) => setMasterCodeInput(e.target.value)}
+                    placeholder="Enter Master Code"
+                    className="mt-1.5 w-full rounded-xl border border-amber-500/50 bg-[#151F32] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Protected with Master Security Code.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300">New Username</label>
+                  <input
+                    type="text"
+                    required
+                    value={newUsernameInput}
+                    onChange={(e) => setNewUsernameInput(e.target.value)}
+                    className="mt-1 w-full rounded-xl border border-[#26354F] bg-[#151F32] px-3.5 py-2 text-xs text-white focus:border-sky-400 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-slate-300">New Password</label>
+                  <input
+                    type="password"
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="Leave blank to keep current password"
+                    className="mt-1 w-full rounded-xl border border-[#26354F] bg-[#151F32] px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-sky-400 focus:outline-none"
+                  />
+                </div>
+
+                {newPasswordInput && (
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={confirmPasswordInput}
+                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      placeholder="Repeat new password"
+                      className="mt-1 w-full rounded-xl border border-[#26354F] bg-[#151F32] px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:border-sky-400 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowCredentialsModal(false)}
+                    className="rounded-xl px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUpdatingCreds}
+                    className="rounded-xl bg-amber-500 px-5 py-2 text-xs font-bold text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.3)] hover:bg-amber-400 disabled:opacity-50 transition"
+                  >
+                    {isUpdatingCreds ? "Authorizing..." : "Authorize & Update"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
       </div>
     </AppShell>

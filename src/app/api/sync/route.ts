@@ -174,11 +174,28 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
 
-    // Apply idempotent merge for progress
+    // Apply idempotent merge for progress (Preserving completion status from both clients)
     if (Array.isArray(progress)) {
       const existingMap = new Map(serverSyncState.progress.map((p) => [p.taskId, p]));
       for (const p of progress) {
-        existingMap.set(p.taskId, { ...p, updatedAt: new Date().toISOString() });
+        const existing = existingMap.get(p.taskId);
+        if (!existing) {
+          existingMap.set(p.taskId, { ...p, updatedAt: new Date().toISOString() });
+        } else {
+          const isCompleted = p.isCompleted || existing.isCompleted;
+          const completedAtTimestamp = p.completedAtTimestamp || existing.completedAtTimestamp;
+          const completionType = p.completionType || existing.completionType;
+          const notes = p.notes || existing.notes;
+          existingMap.set(p.taskId, {
+            ...existing,
+            ...p,
+            isCompleted,
+            completedAtTimestamp,
+            completionType,
+            notes,
+            updatedAt: new Date().toISOString(),
+          });
+        }
       }
       serverSyncState.progress = Array.from(existingMap.values());
     }

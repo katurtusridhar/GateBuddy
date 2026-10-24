@@ -847,8 +847,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         !t.isSundayActivity &&
         !t.isBuffer &&
         !t.isRevision &&
+        t.type !== "BOOSTER_REVISION" &&
+        t.type !== "BOOSTER_PROBLEM_SOLVING" &&
+        t.type !== "SUNDAY_TEST" &&
+        t.type !== "SUNDAY_PYQ" &&
         !t.subject.toLowerCase().includes("revision") &&
-        !t.subject.toLowerCase().includes("problem")
+        !t.subject.toLowerCase().includes("problem") &&
+        !t.title.toLowerCase().includes("revision") &&
+        !t.title.toLowerCase().includes("problem solving")
     );
 
     for (const t of pastTasks) {
