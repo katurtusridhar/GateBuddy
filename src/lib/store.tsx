@@ -152,13 +152,15 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 
-const STORAGE_KEY_PREFIX = "gatebuddy_v2_";
+const STORAGE_KEY_PREFIX = "gatebuddy_v4_";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [credentials, setCredentials] = useState<UserCredentials>(DEFAULT_CREDENTIALS);
   const [user, setUser] = useState<UserProfile | null>(() => {
     if (typeof window !== "undefined") {
       try {
+        const hasAuthCookie = document.cookie.includes("gatebuddy_auth=authenticated");
+        if (!hasAuthCookie) return null;
         const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}user`);
         if (saved) return JSON.parse(saved);
       } catch {}
@@ -253,14 +255,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Load local persisted state on client mount
   useEffect(() => {
     try {
+      // Clear any legacy auto-saved user keys from earlier builds
+      localStorage.removeItem("gatebuddy_v2_user");
+      localStorage.removeItem("gatebuddy_v2_credentials");
+      localStorage.removeItem("gatebuddy_user");
+
+      const hasAuthCookie = typeof document !== "undefined" && document.cookie.includes("gatebuddy_auth=authenticated");
+      if (!hasAuthCookie) {
+        setUser(null);
+        localStorage.removeItem(`${STORAGE_KEY_PREFIX}user`);
+      } else {
+        const savedUser = localStorage.getItem(`${STORAGE_KEY_PREFIX}user`);
+        if (savedUser) setUser(JSON.parse(savedUser));
+      }
+
       const savedCreds = localStorage.getItem(`${STORAGE_KEY_PREFIX}credentials`);
       if (savedCreds) {
         const parsed = JSON.parse(savedCreds);
         setCredentials(parsed);
       }
-
-      const savedUser = localStorage.getItem(`${STORAGE_KEY_PREFIX}user`);
-      if (savedUser) setUser(JSON.parse(savedUser));
 
       const savedProgress = localStorage.getItem(`${STORAGE_KEY_PREFIX}progress`);
       if (savedProgress) {
@@ -1190,7 +1203,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
         setUser(u);
         try {
+          if (typeof document !== "undefined") {
+            document.cookie = "gatebuddy_auth=authenticated; path=/; max-age=2592000; SameSite=Lax";
+          }
           localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(u));
+          await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: cleanInput, password: cleanPass }),
+          });
         } catch {}
         return { success: true };
       }
@@ -1213,6 +1234,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       };
       setUser(u);
       try {
+        if (typeof document !== "undefined") {
+          document.cookie = "gatebuddy_auth=authenticated; path=/; max-age=2592000; SameSite=Lax";
+        }
         localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(u));
       } catch {}
       return { success: true };
@@ -1223,7 +1247,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     setUser(null);
     try {
+      if (typeof document !== "undefined") {
+        document.cookie = "gatebuddy_auth=; path=/; max-age=0";
+      }
       localStorage.removeItem(`${STORAGE_KEY_PREFIX}user`);
+      localStorage.removeItem("gatebuddy_v2_user");
+      await fetch("/api/auth/logout", { method: "POST" });
     } catch {}
     window.location.href = "/login";
   }, []);
