@@ -1,57 +1,19 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useApp } from "@/lib/store";
 import { CyberCard } from "@/components/ui/CyberCard";
-import { ClipboardList, Plus, X } from "lucide-react";
+import { ClipboardList, Smartphone, BookOpen } from "lucide-react";
 
 export default function TestsPage() {
-  const { assessments, addAssessment, todayDateStr } = useApp();
-  const [showAddModal, setShowAddModal] = useState(false);
-
-  // Form states
-  const [testName, setTestName] = useState("");
-  const [subjectName, setSubjectName] = useState("Digital Logic");
-  const [marksObtained, setMarksObtained] = useState("");
-  const [maxMarks, setMaxMarks] = useState("50");
-  const [topic, setTopic] = useState("");
-  const [mistakesAnalysis, setMistakesAnalysis] = useState("");
-  const [followUpTasks, setFollowUpTasks] = useState("");
+  const { assessments } = useApp();
 
   const totalTests = assessments.length;
   const avgPercentage =
     totalTests > 0
       ? Math.round(assessments.reduce((sum, a) => sum + a.percentage, 0) / totalTests)
       : 0;
-
-  const handleAddTest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const marks = parseFloat(marksObtained);
-    const max = parseFloat(maxMarks);
-    if (isNaN(marks) || isNaN(max) || max <= 0) return;
-
-    const percentage = Math.round((marks / max) * 100);
-
-    await addAssessment({
-      testDate: todayDateStr,
-      testName: testName || "Weekly Test & Active Recall",
-      subjectName,
-      marksObtained: marks,
-      maxMarks: max,
-      percentage,
-      topic,
-      mistakesAnalysis,
-      followUpTasks,
-    });
-
-    setShowAddModal(false);
-    setTestName("");
-    setMarksObtained("");
-    setTopic("");
-    setMistakesAnalysis("");
-    setFollowUpTasks("");
-  };
 
   return (
     <AppShell>
@@ -63,13 +25,19 @@ export default function TestsPage() {
             <p className="text-xs text-slate-400">Weekly active recall tests, mistake logs, and revision follow-up tasks</p>
           </div>
 
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-1.5 rounded-xl bg-gate-sky px-4 py-2.5 text-xs font-bold text-slate-950 shadow-glowSky transition hover:bg-sky-400"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Record Test Result</span>
-          </button>
+          {/* Read-Only App Mirror Indicator */}
+          <div className="flex items-center gap-2 rounded-xl border border-sky-500/40 bg-sky-950/40 px-3.5 py-2 text-xs font-semibold text-sky-300 shadow-[0_0_15px_rgba(14,165,233,0.15)]">
+            <Smartphone className="h-4 w-4 text-sky-400 shrink-0" />
+            <span>Mirrored from Android App (Read-Only)</span>
+          </div>
+        </div>
+
+        {/* Read-Only Informational Banner */}
+        <div className="flex items-center gap-3 rounded-xl border border-slate-700/60 bg-[#151F32]/80 px-4 py-3 text-xs text-slate-300">
+          <BookOpen className="h-4 w-4 text-sky-400 shrink-0" />
+          <span>
+            Test entries, marks, and Mistake Notebook logs are recorded exclusively in the <strong>GATEBuddy Android App</strong>. This web dashboard functions as a secure real-time read-only mirror.
+          </span>
         </div>
 
         {/* Stats Row */}
@@ -77,7 +45,7 @@ export default function TestsPage() {
           <CyberCard glow="sky">
             <span className="text-xs font-semibold text-slate-400 uppercase">Total Tests Taken</span>
             <p className="mt-2 text-3xl font-extrabold text-white">{totalTests}</p>
-            <p className="mt-1 text-xs text-slate-400">Weekly tests &amp; PYQ mocks recorded</p>
+            <p className="mt-1 text-xs text-slate-400">Weekly tests &amp; PYQ mocks recorded in App</p>
           </CyberCard>
 
           <CyberCard glow="emerald">
@@ -102,8 +70,10 @@ export default function TestsPage() {
           {assessments.length === 0 ? (
             <CyberCard glow="none" className="py-12 text-center text-xs text-slate-400">
               <ClipboardList className="mx-auto h-10 w-10 text-slate-600" />
-              <p className="mt-3 font-semibold text-slate-300">No test results recorded yet.</p>
-              <p className="mt-1 text-slate-500">Record your weekly test scores and mistake notes here.</p>
+              <p className="mt-3 text-sm font-semibold text-slate-300">No Assessments Logged Yet</p>
+              <p className="mt-1 text-slate-500 max-w-sm mx-auto">
+                Record your weekly test scores and mistake notes in your GATEBuddy Android App to mirror them here in real time.
+              </p>
             </CyberCard>
           ) : (
             <div className="space-y-3">
@@ -146,115 +116,6 @@ export default function TestsPage() {
             </div>
           )}
         </div>
-
-        {/* Modal: Record New Test */}
-        {showAddModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-            <div className="relative w-full max-w-lg rounded-2xl border border-slate-700 bg-gate-card p-6 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                <h3 className="text-lg font-bold text-white">Record Weekly Test Result</h3>
-                <button onClick={() => setShowAddModal(false)} className="rounded-lg p-1 text-slate-400 hover:text-white">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <form onSubmit={handleAddTest} className="mt-4 space-y-3.5">
-                <div>
-                  <label className="text-xs font-semibold text-slate-400">Test Title</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Sunday Test 01 (DL & CN)"
-                    value={testName}
-                    onChange={(e) => setTestName(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-gate-sky focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-400">Subject</label>
-                  <select
-                    value={subjectName}
-                    onChange={(e) => setSubjectName(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-gate-sky focus:outline-none"
-                  >
-                    <option value="Digital Logic">Digital Logic</option>
-                    <option value="Computer Network">Computer Network</option>
-                    <option value="DBMS">DBMS</option>
-                    <option value="Fundamental of C + C Prog">Fundamental of C + C Prog</option>
-                    <option value="Operating System">Operating System</option>
-                    <option value="COA">COA</option>
-                    <option value="General Aptitude">General Aptitude</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-slate-400">Marks Obtained</label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      required
-                      placeholder="e.g. 42"
-                      value={marksObtained}
-                      onChange={(e) => setMarksObtained(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-gate-sky focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-400">Max Marks</label>
-                    <input
-                      type="number"
-                      required
-                      placeholder="50"
-                      value={maxMarks}
-                      onChange={(e) => setMaxMarks(e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-gate-sky focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-400">Subject / Topic</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Combinational Circuits & IP Addressing"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-gate-sky focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-slate-400">Mistake Analysis &amp; Doubts</label>
-                  <textarea
-                    rows={2}
-                    placeholder="What questions did you miss and why?"
-                    value={mistakesAnalysis}
-                    onChange={(e) => setMistakesAnalysis(e.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-gate-sky focus:outline-none"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-3 pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="rounded-xl px-4 py-2 text-xs text-slate-400 hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="rounded-xl bg-gate-sky px-5 py-2 text-xs font-bold text-slate-950 shadow-glowSky hover:bg-sky-400"
-                  >
-                    Save Test Record
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
     </AppShell>
   );

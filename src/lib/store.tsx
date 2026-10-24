@@ -152,15 +152,28 @@ const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_KEY_PREFIX = "gatebuddy_v4_";
 
+export function hasValidAuthCookie(): boolean {
+  if (typeof document === "undefined") return false;
+  const match = document.cookie.match(/(?:^|;\s*)gatebuddy_auth=([^;]+)/);
+  if (!match || !match[1]) return false;
+  const val = decodeURIComponent(match[1].trim());
+  return val.length > 0 && val !== '""' && val !== "deleted";
+}
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [credentials, setCredentials] = useState<UserCredentials>(DEFAULT_CREDENTIALS);
   const [user, setUser] = useState<UserProfile | null>(() => {
     if (typeof window !== "undefined") {
       try {
-        const hasAuthCookie = document.cookie.includes("gatebuddy_auth=authenticated");
-        if (!hasAuthCookie) return null;
+        if (!hasValidAuthCookie()) return null;
         const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}user`);
         if (saved) return JSON.parse(saved);
+        return {
+          id: "usr_katurtusridhar",
+          email: "katurtusridhar@gatebuddy.com",
+          name: "Sridhar",
+          username: "katurtusridhar",
+        };
       } catch {}
     }
     return null;
@@ -276,13 +289,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem("gatebuddy_v2_credentials");
       localStorage.removeItem("gatebuddy_user");
 
-      const hasAuthCookie = typeof document !== "undefined" && document.cookie.includes("gatebuddy_auth=authenticated");
-      if (!hasAuthCookie) {
+      const hasAuth = hasValidAuthCookie();
+      if (!hasAuth) {
         setUser(null);
         localStorage.removeItem(`${STORAGE_KEY_PREFIX}user`);
       } else {
         const savedUser = localStorage.getItem(`${STORAGE_KEY_PREFIX}user`);
-        if (savedUser) setUser(JSON.parse(savedUser));
+        if (savedUser) {
+          try {
+            setUser(JSON.parse(savedUser));
+          } catch {
+            const fallbackUser: UserProfile = {
+              id: "usr_katurtusridhar",
+              email: "katurtusridhar@gatebuddy.com",
+              name: "Sridhar",
+              username: "katurtusridhar",
+            };
+            setUser(fallbackUser);
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(fallbackUser));
+          }
+        } else {
+          const fallbackUser: UserProfile = {
+            id: "usr_katurtusridhar",
+            email: "katurtusridhar@gatebuddy.com",
+            name: "Sridhar",
+            username: "katurtusridhar",
+          };
+          setUser(fallbackUser);
+          localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(fallbackUser));
+        }
+
+        // Asynchronously revalidate session with server
+        fetch("/api/auth/me")
+          .then((res) => (res.ok ? res.json() : null))
+          .then((data) => {
+            if (data?.success && data?.user) {
+              setUser(data.user);
+              try {
+                localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(data.user));
+              } catch {}
+            }
+          })
+          .catch(() => {});
       }
 
       const savedCreds = localStorage.getItem(`${STORAGE_KEY_PREFIX}credentials`);
@@ -1024,9 +1072,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Unidirectional sync model: Task marking and unmarking is exclusively handled in the Android App.
   // The website operates as a pure read-only mirror/replica and has zero authority to mark or unmark tasks.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const toggleTaskComplete = useCallback(
-    async (_rawTaskId?: string, _notes: string = "") => {
+    async (..._args: any[]) => {
+      void _args;
       return {
         success: false,
         error: "Task marking and unmarking is only possible through the GATEBuddy Android app.",
@@ -1159,19 +1207,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [tasks, todayDateStr, syncWithCloud]
   );
 
+  // Unidirectional App -> Website Sync Model:
+  // Assessments and mistake logs are recorded exclusively in the Android Companion App.
+  // The website operates strictly as a read-only mirror.
   const addAssessment = useCallback(
-    async (assessment: Omit<AssessmentResult, "id" | "createdAtTimestamp">) => {
-      const newRecord: AssessmentResult = {
-        ...assessment,
-        id: Date.now(),
-        createdAtTimestamp: Date.now(),
-      };
-      const nextAssessments = [newRecord, ...assessmentsRef.current];
-      assessmentsRef.current = nextAssessments;
-      setAssessments(nextAssessments);
-      syncWithCloud();
+    async (..._args: any[]) => {
+      void _args;
+      console.warn("Website is in read-only mirror mode. Assessments must be recorded in the Android app.");
+      return;
     },
-    [syncWithCloud]
+    []
   );
 
   const addCustomTask = useCallback(
@@ -1292,7 +1337,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUser(u);
       try {
         if (typeof document !== "undefined") {
-          document.cookie = "gatebuddy_auth=authenticated; path=/; max-age=2592000; SameSite=Lax";
+          document.cookie = `gatebuddy_auth=${encodeURIComponent(u.username)}; path=/; max-age=2592000; SameSite=Lax`;
         }
         localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(u));
       } catch {}

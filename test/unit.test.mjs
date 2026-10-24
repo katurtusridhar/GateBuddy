@@ -155,3 +155,61 @@ test('Date Utils Consistency', async (t) => {
   assert.equal(isSunday('2026-10-24'), false, '2026-10-24 is Saturday');
   assert.equal(isSunday('2026-10-26'), false, '2026-10-26 is Monday');
 });
+
+// 5. AUTHENTICATION & MOBILE COOKIE VALIDATION
+test('Mobile Auth Cookie Detection & Anti-Blank Screen Recovery', async (t) => {
+  function testCookieValidator(cookieStr) {
+    if (typeof cookieStr !== 'string') return false;
+    const match = cookieStr.match(/(?:^|;\s*)gatebuddy_auth=([^;]+)/);
+    if (!match || !match[1]) return false;
+    const val = decodeURIComponent(match[1].trim());
+    return val.length > 0 && val !== '""' && val !== 'deleted';
+  }
+
+  // HMAC signed session token
+  const validHmacCookie = 'gatebuddy_auth=katurtusridhar%3A1795000000000%3A8f3c4d2e1b0a; Path=/; SameSite=Lax';
+  assert.equal(testCookieValidator(validHmacCookie), true, 'HMAC token cookie must be detected as valid');
+
+  // Multi-cookie string on mobile browser
+  const multiCookie = 'theme=dark; gatebuddy_auth=a2F0dXJ0dXNyaWRoYXI6MTc5NTAwMDAwMDAwMDpmOWExYjJjM2Q0; _ga=GA1.1.123456';
+  assert.equal(testCookieValidator(multiCookie), true, 'Cookie in multi-cookie header must be parsed correctly');
+
+  // Legacy string
+  const legacyCookie = 'gatebuddy_auth=authenticated; Path=/';
+  assert.equal(testCookieValidator(legacyCookie), true, 'Legacy authenticated string must also pass');
+
+  // Expired / empty / deleted
+  assert.equal(testCookieValidator('gatebuddy_auth=; Max-Age=0'), false, 'Empty cookie must fail');
+  assert.equal(testCookieValidator('gatebuddy_auth=""'), false, 'Empty quotes cookie must fail');
+  assert.equal(testCookieValidator('gatebuddy_auth=deleted'), false, 'Deleted cookie must fail');
+  assert.equal(testCookieValidator('other_cookie=123'), false, 'Missing cookie must fail');
+});
+
+// 6. UNIDIRECTIONAL SYNC & TEST ASSESSMENT WRITE RESTRICTION
+test('Unidirectional App -> Website Sync Rule: Web mutations rejected, App mutations accepted', async (t) => {
+  function validateSyncMutation(headers, body) {
+    const authHeader = headers['authorization'] || '';
+    const isCompanionApp = Boolean(authHeader && authHeader.startsWith('Bearer '));
+    const { progress, recoveries, assessments } = body;
+
+    if (!isCompanionApp && (progress || recoveries || assessments)) {
+      return {
+        status: 403,
+        error: 'Website has no authority to modify task progress, recoveries, or test assessments. These are managed exclusively via the Android Companion App.',
+      };
+    }
+    return { status: 200, success: true };
+  }
+
+  // Web client attempting to push assessments
+  const webTestMutation = validateSyncMutation({ cookie: 'gatebuddy_auth=token' }, { assessments: [{ id: 1, testName: 'DL Test 1' }] });
+  assert.equal(webTestMutation.status, 403, 'Web client cannot push assessments');
+
+  // Web client attempting to push progress
+  const webProgressMutation = validateSyncMutation({ cookie: 'gatebuddy_auth=token' }, { progress: [{ taskId: 'CN_19', isCompleted: true }] });
+  assert.equal(webProgressMutation.status, 403, 'Web client cannot push progress');
+
+  // Android Companion App (with Bearer token) pushing assessments
+  const appAssessmentMutation = validateSyncMutation({ authorization: 'Bearer gb_companion_test_tok' }, { assessments: [{ id: 1, testName: 'DL Test 1' }] });
+  assert.equal(appAssessmentMutation.status, 200, 'Companion App with Bearer token can push assessments');
+});

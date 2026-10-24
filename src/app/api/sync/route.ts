@@ -187,16 +187,16 @@ export async function POST(req: NextRequest) {
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
 
     // Unidirectional App -> Website Sync Model:
-    // ONLY the Android Companion App (Bearer token authenticated) has authority to mutate task progress and recoveries.
-    // The website acts as a read-only replica and is forbidden from modifying task completions or recoveries.
+    // ONLY the Android Companion App (Bearer token authenticated) has authority to mutate task progress, recoveries, and assessments.
+    // The website acts as a read-only replica and is forbidden from modifying task completions, recoveries, or test assessments.
     const authHeader = req.headers.get("authorization");
     const isCompanionApp = Boolean(authHeader && authHeader.startsWith("Bearer "));
 
-    if (!isCompanionApp && (progress || recoveries)) {
+    if (!isCompanionApp && (progress || recoveries || assessments)) {
       return NextResponse.json(
         {
           status: "forbidden",
-          message: "Website has no authority to modify task progress or recoveries. Task completion is managed exclusively via the Android Companion App.",
+          message: "Website has no authority to modify task progress, recoveries, or test assessments. These are managed exclusively via the Android Companion App.",
         },
         { status: 403 }
       );

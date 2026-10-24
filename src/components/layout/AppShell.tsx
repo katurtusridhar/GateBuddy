@@ -80,7 +80,13 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   if (!user) {
-    return null;
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#090D16] p-4 text-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-400 border-t-transparent mb-4" />
+        <p className="text-sm font-bold text-white">Authenticating GateBuddy Session...</p>
+        <p className="mt-1 text-xs text-slate-400">Verifying credentials and loading your dashboard.</p>
+      </div>
+    );
   }
 
   return (
