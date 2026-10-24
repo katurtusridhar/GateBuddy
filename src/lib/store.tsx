@@ -17,7 +17,7 @@ import {
 } from "./types";
 import { getTodayDateStr, compareDateStrings, isSundayDate } from "./dateUtils";
 import { getCodeForSubject } from "./subjectRegistry";
-import { INITIAL_ACHIEVEMENTS, evaluateAchievements } from "./achievementManager";
+import { INITIAL_ACHIEVEMENTS } from "./achievementManager";
 import { validateReschedule, getCandidateRescheduleDates, getCandidateSlotsInfo } from "./recoveryEngine";
 import rawScheduleData from "@/data/gate_cse_schedule.json";
 
@@ -204,7 +204,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const achievementsRef = useRef<Achievement[]>(achievements);
   const settingsRef = useRef<UserSettings>(settings);
   const credentialsRef = useRef<UserCredentials>(credentials);
-  const recentlyMutatedTasksRef = useRef<Map<string, number>>(new Map());
 
   // Keep refs synchronized with React state
   useEffect(() => { progressRef.current = progress; }, [progress]);
@@ -348,84 +347,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [progress, recoveries, assessments, customTasks, settings, achievements, user, credentials, isLoaded, broadcastChange]);
 
-  // Realtime Cloud Synchronization (Immediate push with zero stale closures)
-  const syncWithCloud = useCallback(
-    async (
-      overrideProgress?: TaskProgress[],
-      overrideRecoveries?: RecoveryAssignment[],
-      overrideCustom?: CustomTask[],
-      overrideAchievements?: Achievement[]
-    ) => {
-      setSyncStatus("syncing");
-      try {
-        const payload = {
-          lastSyncTimestamp: Date.now(),
-          progress: overrideProgress || Array.from(progressRef.current.values()),
-          recoveries: overrideRecoveries || recoveriesRef.current,
-          assessments: assessmentsRef.current,
-          customTasks: overrideCustom || customTasksRef.current,
-          settings: settingsRef.current,
-          achievements: overrideAchievements || achievementsRef.current,
-          credentials: credentialsRef.current,
-        };
+  // Unidirectional App -> Website Sync:
+  // The website acts as a pure read-only mirror/replica of the Android App.
+  // The website NEVER pushes task progress or recovery modifications to the server.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const syncWithCloud = useCallback(async (..._args: any[]) => {
+    // Strictly no-op: Task progress and recoveries are authored exclusively on the Android App.
+  }, []);
 
-        const res = await fetch("/api/sync", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-gatebuddy-client-key": "gb_companion_secure_sync_2026_tok",
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          lastSyncTimestampRef.current = json.timestamp || Date.now();
-          setSyncStatus("synced");
-        } else {
-          setSyncStatus("offline");
-        }
-      } catch {
-        setSyncStatus("offline");
-      }
-    },
-    []
-  );
-
-  // Initial pull on mount to fetch remote database state immediately
+  // Initial pull on mount to fetch authoritative App state from cloud immediately
   useEffect(() => {
     if (!isLoaded) return;
     let isCancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/sync?since=0", {
-          headers: { "x-gatebuddy-client-key": "gb_companion_secure_sync_2026_tok" },
-        });
+        const res = await fetch("/api/sync?since=0");
         if (!res.ok || isCancelled) return;
         const result = await res.json();
         if (result.data) {
           lastSyncTimestampRef.current = result.timestamp || Date.now();
-          if (Array.isArray(result.data.progress) && result.data.progress.length > 0) {
-            setProgress((prev) => {
-              const map = new Map(prev);
-              result.data.progress.forEach((p: TaskProgress) => {
-                const existing = map.get(p.taskId);
-                if (!existing || existing.isCompleted !== p.isCompleted || existing.notes !== p.notes) {
-                  map.set(p.taskId, p);
-                }
-              });
-              progressRef.current = map;
-              return map;
+          if (Array.isArray(result.data.progress)) {
+            const map = new Map<string, TaskProgress>();
+            result.data.progress.forEach((p: TaskProgress) => {
+              map.set(p.taskId, p);
             });
+            progressRef.current = map;
+            setProgress(map);
           }
-          if (Array.isArray(result.data.recoveries) && result.data.recoveries.length > 0) {
-            setRecoveries((prev) => {
-              const map = new Map(prev.map((r) => [r.taskId, r]));
-              result.data.recoveries.forEach((r: RecoveryAssignment) => map.set(r.taskId, r));
-              const arr = Array.from(map.values());
-              recoveriesRef.current = arr;
-              return arr;
-            });
+          if (Array.isArray(result.data.recoveries)) {
+            recoveriesRef.current = result.data.recoveries;
+            setRecoveries(result.data.recoveries);
           }
           if (Array.isArray(result.data.assessments) && result.data.assessments.length > 0) {
             setAssessments(result.data.assessments);
@@ -440,32 +391,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             settingsRef.current = result.data.settings;
           }
           if (Array.isArray(result.data.achievements) && result.data.achievements.length > 0) {
-            setAchievements((prev) => {
-              const map = new Map(prev.map((a) => [a.code, a]));
-              let changed = false;
-              result.data.achievements.forEach((remoteAch: Achievement) => {
-                const local = map.get(remoteAch.code);
-                if (local) {
-                  if (remoteAch.isUnlocked && !local.isUnlocked) {
-                    map.set(remoteAch.code, {
-                      ...local,
-                      isUnlocked: true,
-                      unlockedAtTimestamp: remoteAch.unlockedAtTimestamp || Date.now(),
-                    });
-                    changed = true;
-                  }
-                } else {
-                  map.set(remoteAch.code, remoteAch);
-                  changed = true;
-                }
-              });
-              if (changed) {
-                const arr = Array.from(map.values());
-                achievementsRef.current = arr;
-                return arr;
-              }
-              return prev;
-            });
+            setAchievements(result.data.achievements);
+            achievementsRef.current = result.data.achievements;
           }
           setSyncStatus("synced");
         }
@@ -483,68 +410,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!isLoaded) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/sync?since=${lastSyncTimestampRef.current}`, {
-          headers: { "x-gatebuddy-client-key": "gb_companion_secure_sync_2026_tok" },
-        });
+        const res = await fetch(`/api/sync?since=${lastSyncTimestampRef.current}`);
         if (!res.ok) return;
         const result = await res.json();
         if (result.hasUpdates && result.data) {
           lastSyncTimestampRef.current = result.timestamp;
-          const now = Date.now();
-
-          // Prune expired entries from recentlyMutatedTasksRef (> 8000ms old)
-          for (const [tId, timestamp] of Array.from(recentlyMutatedTasksRef.current.entries())) {
-            if (now - timestamp > 8000) {
-              recentlyMutatedTasksRef.current.delete(tId);
-            }
-          }
 
           if (Array.isArray(result.data.progress)) {
-            setProgress((prev) => {
-              const map = new Map(prev);
-              let changed = false;
-              result.data.progress.forEach((p: TaskProgress) => {
-                const lastMutated = recentlyMutatedTasksRef.current.get(p.taskId) || 0;
-                // If mutated locally within the last 6 seconds, protect local user action from remote poll overwrite
-                if (now - lastMutated < 6000) return;
-
-                const existing = map.get(p.taskId);
-                if (!existing || existing.isCompleted !== p.isCompleted || existing.notes !== p.notes) {
-                  map.set(p.taskId, p);
-                  changed = true;
-                }
-              });
-              if (changed) {
-                progressRef.current = map;
-                try {
-                  localStorage.setItem(`${STORAGE_KEY_PREFIX}progress`, JSON.stringify(Array.from(map.values())));
-                } catch {}
-              }
-              return changed ? map : prev;
+            const map = new Map<string, TaskProgress>();
+            result.data.progress.forEach((p: TaskProgress) => {
+              map.set(p.taskId, p);
             });
+            progressRef.current = map;
+            setProgress(map);
+            try {
+              localStorage.setItem(`${STORAGE_KEY_PREFIX}progress`, JSON.stringify(Array.from(map.values())));
+            } catch {}
           }
 
           if (Array.isArray(result.data.recoveries)) {
-            setRecoveries((prev) => {
-              const map = new Map(prev.map((r) => [r.taskId, r]));
-              let changed = false;
-              result.data.recoveries.forEach((r: RecoveryAssignment) => {
-                const existing = map.get(r.taskId);
-                if (!existing || existing.recoveryDate !== r.recoveryDate || existing.status !== r.status || existing.isCompleted !== r.isCompleted) {
-                  map.set(r.taskId, r);
-                  changed = true;
-                }
-              });
-              if (changed) {
-                const nextRecs = Array.from(map.values());
-                recoveriesRef.current = nextRecs;
-                try {
-                  localStorage.setItem(`${STORAGE_KEY_PREFIX}recoveries`, JSON.stringify(nextRecs));
-                } catch {}
-                return nextRecs;
-              }
-              return prev;
-            });
+            const nextRecs = result.data.recoveries;
+            recoveriesRef.current = nextRecs;
+            setRecoveries(nextRecs);
+            try {
+              localStorage.setItem(`${STORAGE_KEY_PREFIX}recoveries`, JSON.stringify(nextRecs));
+            } catch {}
           }
 
           if (Array.isArray(result.data.assessments)) {
@@ -1132,118 +1022,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return getCandidateSlotsInfo(todayDateStr, candidateDates, recoveries, tasks);
   }, [todayDateStr, tasks, recoveries]);
 
-  // Action: Toggle task complete
+  // Unidirectional sync model: Task marking and unmarking is exclusively handled in the Android App.
+  // The website operates as a pure read-only mirror/replica and has zero authority to mark or unmark tasks.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const toggleTaskComplete = useCallback(
-    async (rawTaskId: string, notes: string = "") => {
-      const cleanId = rawTaskId.replace(/^REC_/, "").replace(/^CUSTOM_/, "");
-
-      // Immediately register local mutation timestamp to protect against background polling races
-      recentlyMutatedTasksRef.current.set(cleanId, Date.now());
-
-      if (rawTaskId.startsWith("CUSTOM_")) {
-        const idNum = Number(cleanId);
-        const nextCustoms = customTasksRef.current.map((c) =>
-          c.id === idNum ? { ...c, isCompleted: !c.isCompleted, notes } : c
-        );
-        customTasksRef.current = nextCustoms;
-        setCustomTasks(nextCustoms);
-        syncWithCloud(undefined, undefined, nextCustoms);
-        return { success: true };
-      }
-
-      const currentProg = progressRef.current.get(cleanId);
-      const isCurrentlyDone = currentProg?.isCompleted === true;
-
-      // Handle boosters & Sunday tests
-      if (cleanId.startsWith("BOOSTER_") || cleanId.startsWith("SUNDAY_TEST_")) {
-        const newProg: TaskProgress = {
-          taskId: cleanId,
-          originalDate: todayDateStr,
-          isCompleted: !isCurrentlyDone,
-          completedAtTimestamp: !isCurrentlyDone ? Date.now() : null,
-          completionType: !isCurrentlyDone ? "ON_TIME" : null,
-          notes,
-          lastMutatedTimestamp: Date.now(),
-          isExplicitMutation: true,
-        };
-        const nextMap = new Map(progressRef.current);
-        nextMap.set(cleanId, newProg);
-        progressRef.current = nextMap;
-        setProgress(nextMap);
-
-        const nextProgressArr = Array.from(nextMap.values());
-        const nextAchs = evaluateAchievements(tasks, nextProgressArr, activeBacklogs.length, achievementsRef.current);
-        achievementsRef.current = nextAchs;
-        setAchievements(nextAchs);
-
-        syncWithCloud(nextProgressArr, undefined, undefined, nextAchs);
-        return { success: true };
-      }
-
-      const targetTask = tasks.find((t) => t.id === cleanId);
-      if (!targetTask) return { success: false, error: "Task not found" };
-
-      const rec = recoveriesRef.current.find((r) => r.taskId === cleanId);
-      const effectiveDate = rec ? rec.recoveryDate : targetTask.date;
-
-      // Rule: Past tasks cannot be toggled directly unless assigned to today's recovery slot
-      if (compareDateStrings(effectiveDate, todayDateStr) < 0 && !isCurrentlyDone) {
-        return {
-          success: false,
-          error: "Strict Rule: Past missed tasks cannot be marked complete on past days. Please reschedule them to a catch-up slot.",
-        };
-      }
-
-      const newIsDone = !isCurrentlyDone;
-      const completionType = newIsDone
-        ? effectiveDate === todayDateStr
-          ? rec
-            ? "RECOVERY"
-            : "ON_TIME"
-          : "LATE"
-        : null;
-
-      const updatedProg: TaskProgress = {
-        taskId: cleanId,
-        originalDate: targetTask.date,
-        isCompleted: newIsDone,
-        completedAtTimestamp: newIsDone ? Date.now() : null,
-        completionType,
-        notes,
-        lastMutatedTimestamp: Date.now(),
-        isExplicitMutation: true,
+    async (_rawTaskId?: string, _notes: string = "") => {
+      return {
+        success: false,
+        error: "Task marking and unmarking is only possible through the GATEBuddy Android app.",
       };
-
-      const nextMap = new Map(progressRef.current);
-      nextMap.set(cleanId, updatedProg);
-      progressRef.current = nextMap;
-      setProgress(nextMap);
-
-      let nextRecs = recoveriesRef.current;
-      if (rec) {
-        nextRecs = nextRecs.map((r) =>
-          r.taskId === cleanId
-            ? {
-                ...r,
-                isCompleted: newIsDone,
-                status: newIsDone ? "COMPLETED" : "MANUAL_CONFIRMED",
-                completedAtTimestamp: newIsDone ? Date.now() : null,
-              }
-            : r
-        );
-        recoveriesRef.current = nextRecs;
-        setRecoveries(nextRecs);
-      }
-
-      const nextProgressArr = Array.from(nextMap.values());
-      const nextAchs = evaluateAchievements(tasks, nextProgressArr, activeBacklogs.length, achievementsRef.current);
-      achievementsRef.current = nextAchs;
-      setAchievements(nextAchs);
-
-      syncWithCloud(nextProgressArr, nextRecs, undefined, nextAchs);
-      return { success: true };
     },
-    [tasks, todayDateStr, activeBacklogs.length, syncWithCloud]
+    []
   );
 
   // Action: Reschedule single task

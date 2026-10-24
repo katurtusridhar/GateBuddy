@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
   const sinceVerNum = sinceVer ? parseInt(sinceVer, 10) : 0;
 
   let maxDbTimestamp = 0;
-  let dbErrors: any[] = [];
+  const dbErrors: any[] = [];
 
   // If Supabase is configured, fetch persistent records from PostgreSQL
   if (isSupabaseConfigured) {
@@ -185,6 +185,22 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
+
+    // Unidirectional App -> Website Sync Model:
+    // ONLY the Android Companion App (Bearer token authenticated) has authority to mutate task progress and recoveries.
+    // The website acts as a read-only replica and is forbidden from modifying task completions or recoveries.
+    const authHeader = req.headers.get("authorization");
+    const isCompanionApp = Boolean(authHeader && authHeader.startsWith("Bearer "));
+
+    if (!isCompanionApp && (progress || recoveries)) {
+      return NextResponse.json(
+        {
+          status: "forbidden",
+          message: "Website has no authority to modify task progress or recoveries. Task completion is managed exclusively via the Android Companion App.",
+        },
+        { status: 403 }
+      );
+    }
 
     const baseTimestamp = Math.max(serverSyncState.lastUpdated, globalServerVersion);
     const mutationTimestamp = Math.max(Date.now(), baseTimestamp + 1);

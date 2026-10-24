@@ -7,34 +7,18 @@ import clsx from "clsx";
 
 interface TaskCardProps {
   task: TaskItemUi;
-  onToggleComplete: (notes?: string) => Promise<{ success: boolean; error?: string }>;
+  onToggleComplete?: (notes?: string) => Promise<{ success: boolean; error?: string }>;
   onOpenReschedule?: () => void;
 }
 
-export function TaskCard({ task, onToggleComplete, onOpenReschedule }: TaskCardProps) {
+export function TaskCard({ task, onOpenReschedule }: TaskCardProps) {
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState(task.notes || "");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage] = useState<string | null>(null);
 
   const isLockedPast = task.isPast && !task.isCompleted;
 
-  const handleToggle = async () => {
-    if (isLockedPast) {
-      setErrorMessage("Strict Rule: Past missed tasks cannot be marked complete on past days. Please assign them to a catch-up slot.");
-      return;
-    }
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    const res = await onToggleComplete(noteText);
-    if (!res.success) {
-      setErrorMessage(res.error || "Cannot complete task.");
-    }
-    setIsSubmitting(false);
-  };
-
   const handleSaveNotes = async () => {
-    await onToggleComplete(noteText);
     setShowNotes(false);
   };
 
@@ -161,42 +145,40 @@ export function TaskCard({ task, onToggleComplete, onOpenReschedule }: TaskCardP
           <p className="mt-1 text-xs text-slate-400 line-clamp-2">{displaySubtitle}</p>
         </div>
 
-        {/* Action Toggle / Status Button (36px Circle) */}
+        {/* Read-Only Status Indicator (36px Circle, App-Authoritative Mirror) */}
         <div className="shrink-0 pt-0.5">
           {task.isCompleted ? (
-            // Completed: Always interactive so user can uncheck/unselect anytime!
-            <button
-              onClick={handleToggle}
-              disabled={isSubmitting}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-500 bg-emerald-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)] transition hover:bg-emerald-400 cursor-pointer"
-              title="Completed • Click to unselect"
+            // Completed: Green check circle indicator
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-500 bg-emerald-500/20 text-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)] cursor-default select-none"
+              title="Completed in Android App (Task completion is managed exclusively via the app)"
             >
               <Check className="h-4 w-4 stroke-[3]" />
-            </button>
+            </div>
           ) : isLockedPast ? (
             // Past Missed: Rose circle with X
             <div
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-500/70 bg-rose-950/40 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.2)]"
-              title="Missed in past (Locked). Reschedule below."
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-500/70 bg-rose-950/40 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.2)] cursor-default select-none"
+              title="Missed in past • Rescheduled via Android App"
             >
               <CloseIcon className="h-4 w-4 stroke-[2.5]" />
             </div>
           ) : task.isFuture ? (
             // Future locked
             <div
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800/60 text-slate-500"
-              title="Future task locked until scheduled date"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800/60 text-slate-500 cursor-default select-none"
+              title="Scheduled for future • Managed via Android App"
             >
               <Lock className="h-4 w-4" />
             </div>
           ) : (
-            // Today: Interactive Checkbox
-            <button
-              onClick={handleToggle}
-              disabled={isSubmitting}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-600 bg-slate-800/80 text-slate-400 hover:border-sky-400 hover:text-white transition cursor-pointer"
-              title="Click to mark done"
-            />
+            // Incomplete Today / Default: Read-only subtle circle
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800/60 text-slate-400 cursor-default select-none"
+              title="Incomplete • Mark done via the GATEBuddy Android App"
+            >
+              <span className="h-2 w-2 rounded-full bg-slate-500" />
+            </div>
           )}
         </div>
       </div>
