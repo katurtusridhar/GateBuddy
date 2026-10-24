@@ -53,6 +53,7 @@ export interface TaskProgress {
   version?: number;
   updatedAt?: string;
   lastMutatedTimestamp?: number | null;
+  isExplicitMutation?: boolean;
 }
 
 export interface RecoveryAssignment {

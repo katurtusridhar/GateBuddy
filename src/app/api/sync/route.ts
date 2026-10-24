@@ -7,9 +7,12 @@ import {
   serverCredentials,
 } from "@/lib/serverAuth";
 
+let globalServerVersion = 1;
+
 // Server-side authoritative sync state
 const serverSyncState = {
   lastUpdated: Date.now(),
+  serverVersion: globalServerVersion,
   progress: [] as any[],
   recoveries: [] as any[],
   assessments: [] as any[],
@@ -46,39 +49,63 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const since = searchParams.get("since");
   const sinceTs = since ? parseInt(since, 10) : 0;
+  const sinceVer = searchParams.get("version");
+  const sinceVerNum = sinceVer ? parseInt(sinceVer, 10) : 0;
 
   // If Supabase is configured, fetch persistent records from PostgreSQL
   if (isSupabaseConfigured) {
     try {
-      const [progRes, recRes, assessRes, customRes] = await Promise.all([
+      const [progRes, recRes, assessRes, customRes, achRes] = await Promise.all([
         supabase.from("task_progress").select("*"),
         supabase.from("recovery_assignments").select("*"),
         supabase.from("assessment_results").select("*"),
         supabase.from("custom_tasks").select("*"),
+        (async () => {
+          try {
+            return await supabase.from("user_achievements").select("*");
+          } catch {
+            return { data: null, error: null };
+          }
+        })(),
       ]);
 
+      let maxDbTimestamp = 0;
+
       if (!progRes.error && progRes.data && progRes.data.length > 0) {
-        serverSyncState.progress = progRes.data.map((p) => ({
-          taskId: p.task_id,
-          originalDate: p.original_date,
-          isCompleted: p.is_completed,
-          completedAtTimestamp: p.completed_at ? new Date(p.completed_at).getTime() : null,
-          completionType: p.completion_type,
-          notes: p.notes || "",
-        }));
+        serverSyncState.progress = progRes.data.map((p) => {
+          if (p.updated_at) {
+            const t = new Date(p.updated_at).getTime();
+            if (t > maxDbTimestamp) maxDbTimestamp = t;
+          }
+          return {
+            taskId: p.task_id,
+            originalDate: p.original_date,
+            isCompleted: p.is_completed,
+            completedAtTimestamp: p.completed_at ? new Date(p.completed_at).getTime() : null,
+            completionType: p.completion_type,
+            notes: p.notes || "",
+            lastMutatedTimestamp: p.updated_at ? new Date(p.updated_at).getTime() : 0,
+          };
+        });
       }
 
       if (!recRes.error && recRes.data && recRes.data.length > 0) {
-        serverSyncState.recoveries = recRes.data.map((r) => ({
-          id: r.id,
-          taskId: r.task_id,
-          originalDate: r.original_date,
-          recoveryDate: r.recovery_date,
-          assignedAtTimestamp: r.assigned_at ? new Date(r.assigned_at).getTime() : Date.now(),
-          isCompleted: r.is_completed,
-          priorityLevel: r.priority_level || 2,
-          status: r.status,
-        }));
+        serverSyncState.recoveries = recRes.data.map((r) => {
+          if (r.updated_at) {
+            const t = new Date(r.updated_at).getTime();
+            if (t > maxDbTimestamp) maxDbTimestamp = t;
+          }
+          return {
+            id: r.id,
+            taskId: r.task_id,
+            originalDate: r.original_date,
+            recoveryDate: r.recovery_date,
+            assignedAtTimestamp: r.assigned_at ? new Date(r.assigned_at).getTime() : Date.now(),
+            isCompleted: r.is_completed,
+            priorityLevel: r.priority_level || 2,
+            status: r.status,
+          };
+        });
       }
 
       if (!assessRes.error && assessRes.data && assessRes.data.length > 0) {
@@ -88,16 +115,43 @@ export async function GET(req: NextRequest) {
       if (!customRes.error && customRes.data && customRes.data.length > 0) {
         serverSyncState.customTasks = customRes.data;
       }
+
+      if (achRes && !achRes.error && achRes.data && achRes.data.length > 0) {
+        const existingMap = new Map(serverSyncState.achievements.map((a: any) => [a.code || a.id, a]));
+        for (const remoteAch of achRes.data) {
+          const code = remoteAch.code;
+          const ex = existingMap.get(code);
+          existingMap.set(code, {
+            ...(ex || {}),
+            code,
+            id: code,
+            isUnlocked: remoteAch.is_unlocked === true,
+            unlockedAtTimestamp: remoteAch.unlocked_at ? new Date(remoteAch.unlocked_at).getTime() : null,
+          });
+        }
+        serverSyncState.achievements = Array.from(existingMap.values());
+      }
+
+      if (maxDbTimestamp > serverSyncState.lastUpdated) {
+        serverSyncState.lastUpdated = maxDbTimestamp;
+      }
     } catch {
       // Fallback to in-memory state on query failure
     }
   }
 
+  const hasUpdates =
+    !since ||
+    sinceTs === 0 ||
+    serverSyncState.lastUpdated > sinceTs ||
+    (sinceVerNum > 0 && globalServerVersion > sinceVerNum);
+
   return NextResponse.json({
     status: "ok",
     backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
-    hasUpdates: !since || sinceTs === 0 || serverSyncState.lastUpdated > sinceTs,
+    hasUpdates,
     timestamp: serverSyncState.lastUpdated,
+    serverVersion: globalServerVersion,
     data: sanitizeSyncState(serverSyncState),
   });
 }
@@ -116,31 +170,44 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
 
-    // Apply authoritative merge for progress with timestamp-based conflict resolution
+    const mutationTimestamp = Math.max(Date.now(), serverSyncState.lastUpdated + 1);
+    globalServerVersion++;
+
+    // Apply authoritative merge for progress with deterministic conflict resolution
     if (Array.isArray(progress)) {
       const existingMap = new Map(serverSyncState.progress.map((p) => [p.taskId, p]));
       for (const p of progress) {
         const existing = existingMap.get(p.taskId);
         const incomingIsCompleted = p.isCompleted === true;
         const incomingMutatedAt = Number(p.lastMutatedTimestamp || p.completedAtTimestamp || 0);
+        const isExplicitMutation = p.isExplicitMutation === true;
         const existingCompletedAt = Number(existing?.completedAtTimestamp || 0);
+        const existingMutatedAt = Number(existing?.lastMutatedTimestamp || 0);
 
-        // Safeguard: A stale uncompleted record from background sync loop CANNOT overwrite a recent completed task!
+        // Safeguard: Passive uncompleted background records CANNOT overwrite a confirmed completed task!
         if (existing?.isCompleted && !incomingIsCompleted) {
-          if (incomingMutatedAt <= existingCompletedAt) {
-            // Existing completion is newer or incoming lacks explicit uncheck timestamp -> keep completed!
+          const isExplicitUncheck =
+            isExplicitMutation ||
+            (incomingMutatedAt > 0 && incomingMutatedAt > existingCompletedAt && incomingMutatedAt > existingMutatedAt);
+          if (!isExplicitUncheck) {
+            // Keep existing completed record
             continue;
           }
         }
+
+        const effectiveCompletedAt = incomingIsCompleted
+          ? p.completedAtTimestamp || existing?.completedAtTimestamp || mutationTimestamp
+          : null;
 
         existingMap.set(p.taskId, {
           ...(existing || {}),
           ...p,
           isCompleted: incomingIsCompleted,
-          completedAtTimestamp: incomingIsCompleted ? (p.completedAtTimestamp || Date.now()) : null,
-          completionType: incomingIsCompleted ? (p.completionType || "ON_TIME") : null,
+          completedAtTimestamp: effectiveCompletedAt,
+          completionType: incomingIsCompleted ? (p.completionType || existing?.completionType || "ON_TIME") : null,
           notes: p.notes !== undefined ? p.notes : (existing?.notes || ""),
-          updatedAt: new Date().toISOString(),
+          lastMutatedTimestamp: incomingMutatedAt || mutationTimestamp,
+          updatedAt: new Date(mutationTimestamp).toISOString(),
         });
       }
       serverSyncState.progress = Array.from(existingMap.values());
@@ -150,7 +217,7 @@ export async function POST(req: NextRequest) {
     if (Array.isArray(recoveries)) {
       const existingMap = new Map(serverSyncState.recoveries.map((r) => [r.taskId, r]));
       for (const r of recoveries) {
-        existingMap.set(r.taskId, { ...r, updatedAt: new Date().toISOString() });
+        existingMap.set(r.taskId, { ...r, updatedAt: new Date(mutationTimestamp).toISOString() });
       }
       serverSyncState.recoveries = Array.from(existingMap.values());
     }
@@ -181,7 +248,7 @@ export async function POST(req: NextRequest) {
         const unlockedAtTimestamp =
           a.isUnlocked && a.unlockedAtTimestamp
             ? a.unlockedAtTimestamp
-            : existing?.unlockedAtTimestamp || (isUnlocked ? Date.now() : null);
+            : existing?.unlockedAtTimestamp || (isUnlocked ? mutationTimestamp : null);
         existingMap.set(code, {
           ...(existing || {}),
           ...a,
@@ -201,9 +268,10 @@ export async function POST(req: NextRequest) {
       serverSyncState.credentials = { username: credentials.username || serverCredentials.username };
     }
 
-    serverSyncState.lastUpdated = Date.now();
+    serverSyncState.lastUpdated = mutationTimestamp;
+    serverSyncState.serverVersion = globalServerVersion;
 
-    // If Supabase is configured, asynchronously persist to PostgreSQL
+    // If Supabase is configured, persist all modified entities to PostgreSQL
     if (isSupabaseConfigured) {
       try {
         if (Array.isArray(progress) && progress.length > 0) {
@@ -212,11 +280,12 @@ export async function POST(req: NextRequest) {
             original_date: p.originalDate,
             is_completed: p.isCompleted === true,
             completed_at: p.isCompleted && p.completedAtTimestamp ? new Date(p.completedAtTimestamp).toISOString() : null,
-            completion_type: p.isCompleted ? p.completionType : null,
+            completion_type: p.isCompleted ? (p.completionType || "ON_TIME") : null,
             notes: p.notes || "",
-            updated_at: new Date().toISOString(),
+            updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          await supabase.from("task_progress").upsert(rows, { onConflict: "task_id" });
+          const { error } = await supabase.from("task_progress").upsert(rows, { onConflict: "task_id" });
+          if (error) console.warn("Supabase task_progress upsert error:", error.message);
         }
 
         if (Array.isArray(recoveries) && recoveries.length > 0) {
@@ -227,9 +296,27 @@ export async function POST(req: NextRequest) {
             is_completed: r.isCompleted === true,
             priority_level: r.priorityLevel || 2,
             status: r.status,
-            updated_at: new Date().toISOString(),
+            updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          await supabase.from("recovery_assignments").upsert(rows, { onConflict: "task_id" });
+          const { error } = await supabase.from("recovery_assignments").upsert(rows, { onConflict: "task_id" });
+          if (error) console.warn("Supabase recovery_assignments upsert error:", error.message);
+        }
+
+        if (Array.isArray(achievements) && achievements.length > 0) {
+          const rows = achievements
+            .filter((a: any) => a.isUnlocked === true)
+            .map((a: any) => ({
+              code: a.code || a.id,
+              is_unlocked: true,
+              unlocked_at: a.unlockedAtTimestamp ? new Date(a.unlockedAtTimestamp).toISOString() : new Date().toISOString(),
+            }));
+          if (rows.length > 0) {
+            try {
+              await supabase.from("user_achievements").upsert(rows, { onConflict: "code" });
+            } catch {
+              // table may not exist yet in some environments
+            }
+          }
         }
       } catch (dbErr) {
         console.warn("Supabase background upsert error", dbErr);
@@ -240,7 +327,7 @@ export async function POST(req: NextRequest) {
       status: "synced",
       backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
       timestamp: serverSyncState.lastUpdated,
-      serverVersion: 1,
+      serverVersion: globalServerVersion,
       data: sanitizeSyncState(serverSyncState),
     });
   } catch (error: any) {

@@ -1165,6 +1165,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           completedAtTimestamp: !isCurrentlyDone ? Date.now() : null,
           completionType: !isCurrentlyDone ? "ON_TIME" : null,
           notes,
+          lastMutatedTimestamp: Date.now(),
+          isExplicitMutation: true,
         };
         const nextMap = new Map(progressRef.current);
         nextMap.set(cleanId, newProg);
@@ -1211,6 +1213,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         completionType,
         notes,
         lastMutatedTimestamp: Date.now(),
+        isExplicitMutation: true,
       };
 
       const nextMap = new Map(progressRef.current);
