@@ -198,6 +198,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const lastSyncTimestampRef = useRef<number>(Date.now());
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
+  // Synchronous authoritative state refs to eliminate stale closure bugs completely
+  const progressRef = useRef<Map<string, TaskProgress>>(progress);
+  const recoveriesRef = useRef<RecoveryAssignment[]>(recoveries);
+  const customTasksRef = useRef<CustomTask[]>(customTasks);
+  const assessmentsRef = useRef<AssessmentResult[]>(assessments);
+  const achievementsRef = useRef<Achievement[]>(achievements);
+  const settingsRef = useRef<UserSettings>(settings);
+  const credentialsRef = useRef<UserCredentials>(credentials);
+  const recentlyMutatedTasksRef = useRef<Map<string, number>>(new Map());
+
+  // Keep refs synchronized with React state
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+  useEffect(() => { recoveriesRef.current = recoveries; }, [recoveries]);
+  useEffect(() => { customTasksRef.current = customTasks; }, [customTasks]);
+  useEffect(() => { assessmentsRef.current = assessments; }, [assessments]);
+  useEffect(() => { achievementsRef.current = achievements; }, [achievements]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { credentialsRef.current = credentials; }, [credentials]);
+
   // Midnight date watcher
   useEffect(() => {
     const timer = setInterval(() => {
@@ -331,66 +350,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [progress, recoveries, assessments, customTasks, settings, achievements, user, credentials, isLoaded, broadcastChange]);
 
-  // Realtime Cloud Synchronization (Debounced push + Periodic background pull)
-  const syncWithCloud = useCallback(async () => {
-    setSyncStatus("syncing");
-    try {
-      const payload = {
-        lastSyncTimestamp: Date.now(),
-        progress: Array.from(progress.values()),
-        recoveries,
-        assessments,
-        customTasks,
-        settings,
-        achievements,
-        credentials,
-      };
+  // Realtime Cloud Synchronization (Immediate push with zero stale closures)
+  const syncWithCloud = useCallback(
+    async (
+      overrideProgress?: TaskProgress[],
+      overrideRecoveries?: RecoveryAssignment[],
+      overrideCustom?: CustomTask[],
+      overrideAchievements?: Achievement[]
+    ) => {
+      setSyncStatus("syncing");
+      try {
+        const payload = {
+          lastSyncTimestamp: Date.now(),
+          progress: overrideProgress || Array.from(progressRef.current.values()),
+          recoveries: overrideRecoveries || recoveriesRef.current,
+          assessments: assessmentsRef.current,
+          customTasks: overrideCustom || customTasksRef.current,
+          settings: settingsRef.current,
+          achievements: overrideAchievements || achievementsRef.current,
+          credentials: credentialsRef.current,
+        };
 
-      const res = await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+        const res = await fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      if (res.ok) {
-        const json = await res.json();
-        lastSyncTimestampRef.current = json.timestamp || Date.now();
-        if (json.data) {
-          if (Array.isArray(json.data.progress) && json.data.progress.length > 0) {
-            setProgress((prev) => {
-              const map = new Map(prev);
-              json.data.progress.forEach((p: TaskProgress) => {
-                const existing = map.get(p.taskId);
-                if (!existing || existing.isCompleted !== p.isCompleted) {
-                  map.set(p.taskId, p);
-                }
-              });
-              return map;
-            });
-          }
-          if (Array.isArray(json.data.recoveries) && json.data.recoveries.length > 0) {
-            setRecoveries((prev) => {
-              const map = new Map(prev.map((r) => [r.taskId, r]));
-              json.data.recoveries.forEach((r: RecoveryAssignment) => map.set(r.taskId, r));
-              return Array.from(map.values());
-            });
-          }
-          if (Array.isArray(json.data.assessments) && json.data.assessments.length > 0) {
-            setAssessments(json.data.assessments);
-          }
-          if (Array.isArray(json.data.customTasks) && json.data.customTasks.length > 0) {
-            setCustomTasks(json.data.customTasks);
-          }
-          if (json.data.settings) setSettings(json.data.settings);
+        if (res.ok) {
+          const json = await res.json();
+          lastSyncTimestampRef.current = json.timestamp || Date.now();
+          setSyncStatus("synced");
+        } else {
+          setSyncStatus("offline");
         }
-        setSyncStatus("synced");
-      } else {
+      } catch {
         setSyncStatus("offline");
       }
-    } catch {
-      setSyncStatus("offline");
-    }
-  }, [progress, recoveries, assessments, customTasks, settings, achievements, credentials]);
+    },
+    []
+  );
 
   // Initial pull on mount to fetch remote database state immediately
   useEffect(() => {
@@ -408,10 +407,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const map = new Map(prev);
               result.data.progress.forEach((p: TaskProgress) => {
                 const existing = map.get(p.taskId);
-                if (!existing || existing.isCompleted !== p.isCompleted) {
+                if (!existing || existing.isCompleted !== p.isCompleted || existing.notes !== p.notes) {
                   map.set(p.taskId, p);
                 }
               });
+              progressRef.current = map;
               return map;
             });
           }
@@ -419,17 +419,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             setRecoveries((prev) => {
               const map = new Map(prev.map((r) => [r.taskId, r]));
               result.data.recoveries.forEach((r: RecoveryAssignment) => map.set(r.taskId, r));
-              return Array.from(map.values());
+              const arr = Array.from(map.values());
+              recoveriesRef.current = arr;
+              return arr;
             });
           }
           if (Array.isArray(result.data.assessments) && result.data.assessments.length > 0) {
             setAssessments(result.data.assessments);
+            assessmentsRef.current = result.data.assessments;
           }
           if (Array.isArray(result.data.customTasks) && result.data.customTasks.length > 0) {
             setCustomTasks(result.data.customTasks);
+            customTasksRef.current = result.data.customTasks;
           }
           if (result.data.settings) {
             setSettings(result.data.settings);
+            settingsRef.current = result.data.settings;
+          }
+          if (Array.isArray(result.data.achievements) && result.data.achievements.length > 0) {
+            setAchievements((prev) => {
+              const map = new Map(prev.map((a) => [a.code, a]));
+              let changed = false;
+              result.data.achievements.forEach((remoteAch: Achievement) => {
+                const local = map.get(remoteAch.code);
+                if (local) {
+                  if (remoteAch.isUnlocked && !local.isUnlocked) {
+                    map.set(remoteAch.code, {
+                      ...local,
+                      isUnlocked: true,
+                      unlockedAtTimestamp: remoteAch.unlockedAtTimestamp || Date.now(),
+                    });
+                    changed = true;
+                  }
+                } else {
+                  map.set(remoteAch.code, remoteAch);
+                  changed = true;
+                }
+              });
+              if (changed) {
+                const arr = Array.from(map.values());
+                achievementsRef.current = arr;
+                return arr;
+              }
+              return prev;
+            });
           }
           setSyncStatus("synced");
         }
@@ -452,34 +485,107 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const result = await res.json();
         if (result.hasUpdates && result.data) {
           lastSyncTimestampRef.current = result.timestamp;
+          const now = Date.now();
+
+          // Prune expired entries from recentlyMutatedTasksRef (> 8000ms old)
+          for (const [tId, timestamp] of Array.from(recentlyMutatedTasksRef.current.entries())) {
+            if (now - timestamp > 8000) {
+              recentlyMutatedTasksRef.current.delete(tId);
+            }
+          }
+
           if (Array.isArray(result.data.progress)) {
             setProgress((prev) => {
               const map = new Map(prev);
+              let changed = false;
               result.data.progress.forEach((p: TaskProgress) => {
+                const lastMutated = recentlyMutatedTasksRef.current.get(p.taskId) || 0;
+                // If mutated locally within the last 6 seconds, protect local user action from remote poll overwrite
+                if (now - lastMutated < 6000) return;
+
                 const existing = map.get(p.taskId);
-                if (!existing || existing.isCompleted !== p.isCompleted) {
+                if (!existing || existing.isCompleted !== p.isCompleted || existing.notes !== p.notes) {
                   map.set(p.taskId, p);
+                  changed = true;
                 }
               });
-              return map;
+              if (changed) {
+                progressRef.current = map;
+                try {
+                  localStorage.setItem(`${STORAGE_KEY_PREFIX}progress`, JSON.stringify(Array.from(map.values())));
+                } catch {}
+              }
+              return changed ? map : prev;
             });
           }
+
           if (Array.isArray(result.data.recoveries)) {
             setRecoveries((prev) => {
               const map = new Map(prev.map((r) => [r.taskId, r]));
-              result.data.recoveries.forEach((r: RecoveryAssignment) => map.set(r.taskId, r));
-              return Array.from(map.values());
+              let changed = false;
+              result.data.recoveries.forEach((r: RecoveryAssignment) => {
+                const existing = map.get(r.taskId);
+                if (!existing || existing.recoveryDate !== r.recoveryDate || existing.status !== r.status || existing.isCompleted !== r.isCompleted) {
+                  map.set(r.taskId, r);
+                  changed = true;
+                }
+              });
+              if (changed) {
+                const nextRecs = Array.from(map.values());
+                recoveriesRef.current = nextRecs;
+                try {
+                  localStorage.setItem(`${STORAGE_KEY_PREFIX}recoveries`, JSON.stringify(nextRecs));
+                } catch {}
+                return nextRecs;
+              }
+              return prev;
             });
           }
+
           if (Array.isArray(result.data.assessments)) {
             setAssessments(result.data.assessments);
+            assessmentsRef.current = result.data.assessments;
           }
+
           if (Array.isArray(result.data.customTasks)) {
             setCustomTasks(result.data.customTasks);
+            customTasksRef.current = result.data.customTasks;
           }
+
           if (result.data.settings) {
             setSettings(result.data.settings);
+            settingsRef.current = result.data.settings;
           }
+
+          if (Array.isArray(result.data.achievements)) {
+            setAchievements((prev) => {
+              const map = new Map(prev.map((a) => [a.code, a]));
+              let changed = false;
+              result.data.achievements.forEach((remoteAch: Achievement) => {
+                const local = map.get(remoteAch.code);
+                if (local) {
+                  if (remoteAch.isUnlocked && !local.isUnlocked) {
+                    map.set(remoteAch.code, {
+                      ...local,
+                      isUnlocked: true,
+                      unlockedAtTimestamp: remoteAch.unlockedAtTimestamp || Date.now(),
+                    });
+                    changed = true;
+                  }
+                } else {
+                  map.set(remoteAch.code, remoteAch);
+                  changed = true;
+                }
+              });
+              if (changed) {
+                const nextAchs = Array.from(map.values());
+                achievementsRef.current = nextAchs;
+                return nextAchs;
+              }
+              return prev;
+            });
+          }
+
           setSyncStatus("synced");
         }
       } catch {
@@ -723,7 +829,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const prog = progress.get(t.id);
           const isDone = prog?.isCompleted === true;
           const rec = recoveries.find(
-            (r) => r.taskId === t.id && (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED")
+            (r) =>
+              r.taskId === t.id &&
+              (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED" || r.status === "COMPLETED")
           );
 
           let status: TaskStatus = "UPCOMING";
@@ -837,7 +945,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       // Add Recovery Catch-up tasks assigned to this date (max 2 per day)
       const recoveriesForDate = recoveries.filter(
-        (r) => r.recoveryDate === targetDateStr && (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED")
+        (r) =>
+          r.recoveryDate === targetDateStr &&
+          (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED" || r.status === "COMPLETED")
       );
 
       for (const rec of recoveriesForDate) {
@@ -999,19 +1109,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     async (rawTaskId: string, notes: string = "") => {
       const cleanId = rawTaskId.replace(/^REC_/, "").replace(/^CUSTOM_/, "");
 
+      // Immediately register local mutation timestamp to protect against background polling races
+      recentlyMutatedTasksRef.current.set(cleanId, Date.now());
+
       if (rawTaskId.startsWith("CUSTOM_")) {
         const idNum = Number(cleanId);
-        setCustomTasks((prev) =>
-          prev.map((c) => (c.id === idNum ? { ...c, isCompleted: !c.isCompleted, notes } : c))
+        const nextCustoms = customTasksRef.current.map((c) =>
+          c.id === idNum ? { ...c, isCompleted: !c.isCompleted, notes } : c
         );
-        setTimeout(syncWithCloud, 100);
+        customTasksRef.current = nextCustoms;
+        setCustomTasks(nextCustoms);
+        syncWithCloud(undefined, undefined, nextCustoms);
         return { success: true };
       }
 
-      const currentProg = progress.get(cleanId);
+      const currentProg = progressRef.current.get(cleanId);
       const isCurrentlyDone = currentProg?.isCompleted === true;
 
-      // Handle boosters
+      // Handle boosters & Sunday tests
       if (cleanId.startsWith("BOOSTER_") || cleanId.startsWith("SUNDAY_TEST_")) {
         const newProg: TaskProgress = {
           taskId: cleanId,
@@ -1021,16 +1136,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           completionType: !isCurrentlyDone ? "ON_TIME" : null,
           notes,
         };
-        setProgress((prev) => new Map(prev).set(cleanId, newProg));
-        setTimeout(syncWithCloud, 100);
+        const nextMap = new Map(progressRef.current);
+        nextMap.set(cleanId, newProg);
+        progressRef.current = nextMap;
+        setProgress(nextMap);
+
+        const nextProgressArr = Array.from(nextMap.values());
+        const nextAchs = evaluateAchievements(tasks, nextProgressArr, activeBacklogs.length, achievementsRef.current);
+        achievementsRef.current = nextAchs;
+        setAchievements(nextAchs);
+
+        syncWithCloud(nextProgressArr, undefined, undefined, nextAchs);
         return { success: true };
       }
 
       const targetTask = tasks.find((t) => t.id === cleanId);
       if (!targetTask) return { success: false, error: "Task not found" };
 
-      const rec = recoveries.find((r) => r.taskId === cleanId);
-
+      const rec = recoveriesRef.current.find((r) => r.taskId === cleanId);
       const effectiveDate = rec ? rec.recoveryDate : targetTask.date;
 
       // Rule: Past tasks cannot be toggled directly unless assigned to today's recovery slot
@@ -1059,38 +1182,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         notes,
       };
 
-      setProgress((prev) => new Map(prev).set(cleanId, updatedProg));
+      const nextMap = new Map(progressRef.current);
+      nextMap.set(cleanId, updatedProg);
+      progressRef.current = nextMap;
+      setProgress(nextMap);
 
+      let nextRecs = recoveriesRef.current;
       if (rec) {
-        setRecoveries((prev) =>
-          prev.map((r) =>
-            r.taskId === cleanId
-              ? {
-                  ...r,
-                  isCompleted: newIsDone,
-                  status: newIsDone ? "COMPLETED" : "MANUAL_CONFIRMED",
-                  completedAtTimestamp: newIsDone ? Date.now() : null,
-                }
-              : r
-          )
+        nextRecs = nextRecs.map((r) =>
+          r.taskId === cleanId
+            ? {
+                ...r,
+                isCompleted: newIsDone,
+                status: newIsDone ? "COMPLETED" : "MANUAL_CONFIRMED",
+                completedAtTimestamp: newIsDone ? Date.now() : null,
+              }
+            : r
         );
+        recoveriesRef.current = nextRecs;
+        setRecoveries(nextRecs);
       }
 
-      setTimeout(() => {
-        setAchievements((prev) => evaluateAchievements(tasks, Array.from(progress.values()), activeBacklogs.length, prev));
-        syncWithCloud();
-      }, 50);
+      const nextProgressArr = Array.from(nextMap.values());
+      const nextAchs = evaluateAchievements(tasks, nextProgressArr, activeBacklogs.length, achievementsRef.current);
+      achievementsRef.current = nextAchs;
+      setAchievements(nextAchs);
 
+      syncWithCloud(nextProgressArr, nextRecs, undefined, nextAchs);
       return { success: true };
     },
-    [tasks, progress, recoveries, todayDateStr, activeBacklogs.length, syncWithCloud]
+    [tasks, todayDateStr, activeBacklogs.length, syncWithCloud]
   );
 
   // Action: Reschedule single task
   const rescheduleTask = useCallback(
     async (rawTaskId: string, newDate: string) => {
       const cleanId = rawTaskId.replace(/^REC_/, "");
-      const validation = validateReschedule(cleanId, newDate, todayDateStr, recoveries, tasks);
+      const validation = validateReschedule(cleanId, newDate, todayDateStr, recoveriesRef.current, tasks);
 
       if (!validation.valid) {
         return { success: false, error: validation.error };
@@ -1099,31 +1227,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const targetTask = tasks.find((t) => t.id === cleanId);
       if (!targetTask) return { success: false, error: "Task not found" };
 
-      setRecoveries((prev) => {
-        const existing = prev.find((r) => r.taskId === cleanId);
-        if (existing) {
-          return prev.map((r) =>
-            r.taskId === cleanId ? { ...r, recoveryDate: newDate, status: "MANUAL_CONFIRMED" } : r
-          );
-        } else {
-          const newRec: RecoveryAssignment = {
-            id: Date.now(),
-            taskId: cleanId,
-            originalDate: targetTask.date,
-            recoveryDate: newDate,
-            assignedAtTimestamp: Date.now(),
-            isCompleted: false,
-            priorityLevel: 2,
-            status: "MANUAL_CONFIRMED",
-          };
-          return [...prev, newRec];
-        }
-      });
+      let nextRecs: RecoveryAssignment[];
+      const existing = recoveriesRef.current.find((r) => r.taskId === cleanId);
+      if (existing) {
+        nextRecs = recoveriesRef.current.map((r) =>
+          r.taskId === cleanId ? { ...r, recoveryDate: newDate, status: "MANUAL_CONFIRMED" } : r
+        );
+      } else {
+        const newRec: RecoveryAssignment = {
+          id: Date.now(),
+          taskId: cleanId,
+          originalDate: targetTask.date,
+          recoveryDate: newDate,
+          assignedAtTimestamp: Date.now(),
+          isCompleted: false,
+          priorityLevel: 2,
+          status: "MANUAL_CONFIRMED",
+        };
+        nextRecs = [...recoveriesRef.current, newRec];
+      }
 
-      setTimeout(syncWithCloud, 50);
+      recoveriesRef.current = nextRecs;
+      setRecoveries(nextRecs);
+      syncWithCloud(undefined, nextRecs);
       return { success: true };
     },
-    [recoveries, tasks, todayDateStr, syncWithCloud]
+    [tasks, todayDateStr, syncWithCloud]
   );
 
   // Action: Batch reschedule
@@ -1141,7 +1270,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       for (const [dateStr, taskIds] of Array.from(byDate.entries())) {
-        const existingOnDate = recoveries.filter(
+        const existingOnDate = recoveriesRef.current.filter(
           (r) =>
             r.recoveryDate === dateStr &&
             !taskIds.includes(r.taskId) &&
@@ -1177,36 +1306,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      setRecoveries((prev) => {
-        const map = new Map(prev.map((r) => [r.taskId, r]));
-        for (const [rawId, dateStr] of Object.entries(assignments)) {
-          const cleanId = rawId.replace(/^REC_/, "");
-          const targetTask = tasks.find((t) => t.id === cleanId);
-          if (!targetTask) continue;
+      const map = new Map(recoveriesRef.current.map((r) => [r.taskId, r]));
+      for (const [rawId, dateStr] of Object.entries(assignments)) {
+        const cleanId = rawId.replace(/^REC_/, "");
+        const targetTask = tasks.find((t) => t.id === cleanId);
+        if (!targetTask) continue;
 
-          const existing = map.get(cleanId);
-          if (existing) {
-            map.set(cleanId, { ...existing, recoveryDate: dateStr, status: "MANUAL_CONFIRMED" });
-          } else {
-            map.set(cleanId, {
-              id: Date.now() + Math.floor(Math.random() * 1000),
-              taskId: cleanId,
-              originalDate: targetTask.date,
-              recoveryDate: dateStr,
-              assignedAtTimestamp: Date.now(),
-              isCompleted: false,
-              priorityLevel: 2,
-              status: "MANUAL_CONFIRMED",
-            });
-          }
+        const existing = map.get(cleanId);
+        if (existing) {
+          map.set(cleanId, { ...existing, recoveryDate: dateStr, status: "MANUAL_CONFIRMED" });
+        } else {
+          map.set(cleanId, {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            taskId: cleanId,
+            originalDate: targetTask.date,
+            recoveryDate: dateStr,
+            assignedAtTimestamp: Date.now(),
+            isCompleted: false,
+            priorityLevel: 2,
+            status: "MANUAL_CONFIRMED",
+          });
         }
-        return Array.from(map.values());
-      });
+      }
 
-      setTimeout(syncWithCloud, 50);
+      const nextRecs = Array.from(map.values());
+      recoveriesRef.current = nextRecs;
+      setRecoveries(nextRecs);
+      syncWithCloud(undefined, nextRecs);
       return { success: true };
     },
-    [recoveries, tasks, todayDateStr, syncWithCloud]
+    [tasks, todayDateStr, syncWithCloud]
   );
 
   const addAssessment = useCallback(
@@ -1216,8 +1345,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         id: Date.now(),
         createdAtTimestamp: Date.now(),
       };
-      setAssessments((prev) => [newRecord, ...prev]);
-      setTimeout(syncWithCloud, 50);
+      const nextAssessments = [newRecord, ...assessmentsRef.current];
+      assessmentsRef.current = nextAssessments;
+      setAssessments(nextAssessments);
+      syncWithCloud();
     },
     [syncWithCloud]
   );
@@ -1228,16 +1359,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...task,
         id: Date.now(),
       };
-      setCustomTasks((prev) => [...prev, newRecord]);
-      setTimeout(syncWithCloud, 50);
+      const nextCustom = [...customTasksRef.current, newRecord];
+      customTasksRef.current = nextCustom;
+      setCustomTasks(nextCustom);
+      syncWithCloud(undefined, undefined, nextCustom);
     },
     [syncWithCloud]
   );
 
   const updateSettings = useCallback(
     async (newSettings: Partial<UserSettings>) => {
-      setSettings((prev) => ({ ...prev, ...newSettings }));
-      setTimeout(syncWithCloud, 50);
+      const updated = { ...settingsRef.current, ...newSettings };
+      settingsRef.current = updated;
+      setSettings(updated);
+      syncWithCloud();
     },
     [syncWithCloud]
   );
@@ -1245,7 +1380,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Action: Master Code Protected Credential Modification
   const changeCredentials = useCallback(
     async (newUsername: string, newPass: string, masterCode: string) => {
-      if (masterCode.trim() !== credentials.masterCode) {
+      if (masterCode.trim() !== credentialsRef.current.masterCode) {
         return {
           success: false,
           error: "Master Security Code invalid. Authorization denied. Please enter the correct master code to modify credentials.",
@@ -1259,9 +1394,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const updated: UserCredentials = {
         username: newUsername.trim(),
         password: newPass.trim(),
-        masterCode: credentials.masterCode,
+        masterCode: credentialsRef.current.masterCode,
       };
 
+      credentialsRef.current = updated;
       setCredentials(updated);
       setUser((prev) =>
         prev
@@ -1269,10 +1405,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : { id: "usr_custom", email: `${updated.username}@gatebuddy.com`, name: updated.username, username: updated.username }
       );
 
-      setTimeout(syncWithCloud, 50);
+      syncWithCloud();
       return { success: true };
     },
-    [credentials, syncWithCloud]
+    [syncWithCloud]
   );
 
   // Action: Login

@@ -119,6 +119,27 @@ export function validateReschedule(
     return { valid: false, error: "Task not found." };
   }
 
+  // Strict GATE Rule: Rescheduling is strictly for lectures only.
+  // Never for Daily Problem Solving, Daily Revision, Boosters, or Sunday Tests.
+  if (
+    targetTask.isSundayActivity ||
+    targetTask.isBuffer ||
+    targetTask.isRevision ||
+    targetTask.type === "BOOSTER_REVISION" ||
+    targetTask.type === "BOOSTER_PROBLEM_SOLVING" ||
+    targetTask.type === "SUNDAY_TEST" ||
+    targetTask.type === "SUNDAY_PYQ" ||
+    targetTask.subject.toLowerCase().includes("revision") ||
+    targetTask.subject.toLowerCase().includes("problem") ||
+    targetTask.title.toLowerCase().includes("revision") ||
+    targetTask.title.toLowerCase().includes("problem solving")
+  ) {
+    return {
+      valid: false,
+      error: "Strict Rule: Rescheduling is strictly for core lectures only. Daily Problem Solving and Daily Revision cannot be rescheduled.",
+    };
+  }
+
   // Active recoveries on target date excluding this task itself
   const existingOnDate = activeRecoveries.filter(
     (r) =>

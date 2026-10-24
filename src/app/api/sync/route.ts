@@ -139,7 +139,25 @@ export async function POST(req: NextRequest) {
     }
 
     if (Array.isArray(achievements)) {
-      serverSyncState.achievements = achievements;
+      const existingMap = new Map(serverSyncState.achievements.map((a: any) => [a.code || a.id, a]));
+      for (const a of achievements) {
+        const code = a.code || a.id;
+        const existing = existingMap.get(code);
+        const isUnlocked = a.isUnlocked === true || existing?.isUnlocked === true;
+        const unlockedAtTimestamp =
+          a.isUnlocked && a.unlockedAtTimestamp
+            ? a.unlockedAtTimestamp
+            : existing?.unlockedAtTimestamp || (isUnlocked ? Date.now() : null);
+        existingMap.set(code, {
+          ...(existing || {}),
+          ...a,
+          id: code,
+          code,
+          isUnlocked,
+          unlockedAtTimestamp,
+        });
+      }
+      serverSyncState.achievements = Array.from(existingMap.values());
     }
 
     if (credentials) {
@@ -169,7 +187,7 @@ export async function POST(req: NextRequest) {
             task_id: r.taskId,
             original_date: r.originalDate,
             recovery_date: r.recoveryDate,
-            is_completed: r.isCompleted,
+            is_completed: r.isCompleted === true,
             priority_level: r.priorityLevel || 2,
             status: r.status,
             updated_at: new Date().toISOString(),
