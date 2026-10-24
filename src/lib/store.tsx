@@ -604,7 +604,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Sequential Lecture Index calculation matching Android ScheduleRepository.kt
   const getSequentialLecture = useCallback(
-    (baseTask: ScheduleTask, targetDateStr: string) => {
+    (baseTask: ScheduleTask, targetDateStr: string, isRecovery: boolean = false, recoveryOrderIndex: number = 0) => {
       // Historical past dates preserve original canonical lecture definition
       if (compareDateStrings(targetDateStr, todayDateStr) < 0) {
         return baseTask;
@@ -621,6 +621,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (subjectTasks.length === 0) return baseTask;
 
       // Count completed lectures for this subject strictly before this date/slot
+      const targetSlot = isRecovery ? 5 : baseTask.slot;
       let completedBefore = 0;
       for (const t of tasks) {
         if (t.subject !== baseTask.subject || t.isSundayActivity || t.isBuffer || t.isRevision) continue;
@@ -629,7 +630,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         if (compareDateStrings(t.date, targetDateStr) < 0) {
           completedBefore++;
-        } else if (t.date === targetDateStr && t.slot < baseTask.slot) {
+        } else if (t.date === targetDateStr && !isRecovery && t.slot < targetSlot) {
           completedBefore++;
         }
       }
@@ -644,8 +645,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      const isThisSlotCompleted = progress.get(baseTask.id)?.isCompleted === true;
       // If this specific slot is already completed, it holds its assigned lecture index
-      if (progress.get(baseTask.id)?.isCompleted === true) {
+      if (isThisSlotCompleted) {
         const idx = Math.min(Math.max(0, completedBefore), subjectTasks.length - 1);
         return {
           ...baseTask,
@@ -667,8 +669,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         );
         for (const dt of dTasks) {
           if (d === targetDateStr) {
-            if (dt.slot < baseTask.slot && progress.get(dt.id)?.isCompleted !== true) {
-              uncompletedEarlier++;
+            if (isRecovery) {
+              if (progress.get(dt.id)?.isCompleted !== true) {
+                uncompletedEarlier++;
+              }
+            } else {
+              if (dt.slot < targetSlot && progress.get(dt.id)?.isCompleted !== true) {
+                uncompletedEarlier++;
+              }
             }
           } else {
             if (progress.get(dt.id)?.isCompleted !== true) {
@@ -688,6 +696,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             );
           });
           uncompletedEarlier += dRecs.length;
+        } else if (d === targetDateStr && isRecovery) {
+          uncompletedEarlier += recoveryOrderIndex;
         }
 
         // Increment day string safely
@@ -703,8 +713,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...baseTask,
         curNum: lecture.curNum,
         totalCount: lecture.totalCount,
-        title: lecture.title,
-        details: lecture.details,
+        title: isRecovery ? `${baseTask.subject} — Lec ${lecture.curNum}/${lecture.totalCount}` : lecture.title,
+        details: isRecovery ? "Rescheduled Sunday catch-up • Slot 5 • +10 points" : lecture.details,
         milestone: lecture.milestone,
         sourcePage: lecture.sourcePage,
       };
@@ -951,17 +961,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Add Recovery Catch-up tasks assigned to this date (max 2 per day)
+      // Strictly sequential lecture adaptation matching Android ScheduleRepository.kt
       const recoveriesForDate = recoveries.filter(
         (r) =>
           r.recoveryDate === targetDateStr &&
           (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED" || r.status === "COMPLETED")
       );
 
-      for (const rec of recoveriesForDate) {
+      for (let rIdx = 0; rIdx < recoveriesForDate.length; rIdx++) {
+        const rec = recoveriesForDate[rIdx];
         const originalTask = tasks.find((t) => t.id === rec.taskId);
         if (!originalTask) continue;
         const prog = progress.get(rec.taskId);
         const isDone = prog?.isCompleted === true || rec.isCompleted;
+
+        // Count earlier recoveries for the same subject on this same day
+        const earlierRecCount = recoveriesForDate.slice(0, rIdx).filter((other) => {
+          const ot = tasks.find((t) => t.id === other.taskId);
+          return ot?.subject === originalTask.subject;
+        }).length;
+
+        const adaptedTask = getSequentialLecture(originalTask, targetDateStr, true, earlierRecCount);
 
         let status: TaskStatus = "RECOVERY_SCHEDULED";
         if (isDone) {
@@ -972,7 +992,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status = "MISSED";
         }
 
-        const cleanTitle = originalTask.title.replace(/\s*\(Catch-Up\)/g, "").trim();
+        const cleanTitle = adaptedTask.title.replace(/\s*\(Catch-Up\)/g, "").trim();
 
         items.push({
           id: `REC_${rec.taskId}`,
@@ -983,12 +1003,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           subject: originalTask.subject,
           subjectCode: getCodeForSubject(originalTask.subject),
           type: originalTask.type as any,
-          curNum: originalTask.curNum,
-          totalCount: originalTask.totalCount,
+          curNum: adaptedTask.curNum,
+          totalCount: adaptedTask.totalCount,
           title: `${cleanTitle} (Catch-Up)`,
           details: `Rescheduled Sunday catch-up • Slot 5 • +10 points`,
-          milestone: "",
-          sourcePage: originalTask.sourcePage,
+          milestone: adaptedTask.milestone || "",
+          sourcePage: adaptedTask.sourcePage,
           isBuffer: false,
           isRevision: false,
           isSundayActivity: false,
@@ -1190,6 +1210,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         completedAtTimestamp: newIsDone ? Date.now() : null,
         completionType,
         notes,
+        lastMutatedTimestamp: Date.now(),
       };
 
       const nextMap = new Map(progressRef.current);

@@ -44,21 +44,20 @@ export function evaluateAchievements(
     unlock("FIRST_TASK");
   }
 
-  // 2. First Perfect Day
+  // 2. First Perfect Day (User request: Don't unlock Flawless Execution today as user was testing)
+  const firstPerfectDay = newlyEvaluated.find((a) => a.code === "FIRST_PERFECT_DAY");
+  if (firstPerfectDay) {
+    firstPerfectDay.isUnlocked = false;
+    firstPerfectDay.unlockedAtTimestamp = null;
+  }
+
+  // 3. Perfect Sunday
   const allByDate = new Map<string, ScheduleTask[]>();
   for (const t of allTasks) {
     const arr = allByDate.get(t.date) || [];
     arr.push(t);
     allByDate.set(t.date, arr);
   }
-  for (const [, dayTasks] of Array.from(allByDate.entries())) {
-    if (dayTasks.length > 0 && dayTasks.every((t) => progressMap.get(t.id)?.isCompleted)) {
-      unlock("FIRST_PERFECT_DAY");
-      break;
-    }
-  }
-
-  // 3. Perfect Sunday
   for (const [, dayTasks] of Array.from(allByDate.entries())) {
     const sundayTasks = dayTasks.filter((t) => t.isSundayActivity);
     if (sundayTasks.length >= 2 && sundayTasks.every((t) => progressMap.get(t.id)?.isCompleted)) {
@@ -67,8 +66,21 @@ export function evaluateAchievements(
     }
   }
 
-  // 4. Backlog cleared
-  if (completedTasks.length >= 5 && currentBacklog === 0) {
+  // 4. Backlog cleared (Zero Debt: strictly verified true backlog debt)
+  // Any past task before today that is not completed is debt, even if rescheduled to future Sundays
+  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const pastUncompletedCount = allTasks.filter(
+    (t) => t.date < todayStr && !t.isSundayActivity && !t.isBuffer && !t.isRevision && progressMap.get(t.id)?.isCompleted !== true
+  ).length;
+
+  const backlogBadge = newlyEvaluated.find((a) => a.code === "BACKLOG_CLEARED");
+  if (pastUncompletedCount > 0 || currentBacklog > 0 || completedTasks.length < 5) {
+    // If user has ANY uncompleted past tasks or current backlog, Zero Debt must remain strictly locked!
+    if (backlogBadge) {
+      backlogBadge.isUnlocked = false;
+      backlogBadge.unlockedAtTimestamp = null;
+    }
+  } else {
     unlock("BACKLOG_CLEARED");
   }
 

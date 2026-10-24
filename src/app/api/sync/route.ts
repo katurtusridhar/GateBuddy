@@ -116,17 +116,29 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
 
-    // Apply authoritative merge for progress (Allowing both check and uncheck)
+    // Apply authoritative merge for progress with timestamp-based conflict resolution
     if (Array.isArray(progress)) {
       const existingMap = new Map(serverSyncState.progress.map((p) => [p.taskId, p]));
       for (const p of progress) {
         const existing = existingMap.get(p.taskId);
+        const incomingIsCompleted = p.isCompleted === true;
+        const incomingMutatedAt = Number(p.lastMutatedTimestamp || p.completedAtTimestamp || 0);
+        const existingCompletedAt = Number(existing?.completedAtTimestamp || 0);
+
+        // Safeguard: A stale uncompleted record from background sync loop CANNOT overwrite a recent completed task!
+        if (existing?.isCompleted && !incomingIsCompleted) {
+          if (incomingMutatedAt <= existingCompletedAt) {
+            // Existing completion is newer or incoming lacks explicit uncheck timestamp -> keep completed!
+            continue;
+          }
+        }
+
         existingMap.set(p.taskId, {
           ...(existing || {}),
           ...p,
-          isCompleted: p.isCompleted === true,
-          completedAtTimestamp: p.isCompleted ? (p.completedAtTimestamp || Date.now()) : null,
-          completionType: p.isCompleted ? (p.completionType || "ON_TIME") : null,
+          isCompleted: incomingIsCompleted,
+          completedAtTimestamp: incomingIsCompleted ? (p.completedAtTimestamp || Date.now()) : null,
+          completionType: incomingIsCompleted ? (p.completionType || "ON_TIME") : null,
           notes: p.notes !== undefined ? p.notes : (existing?.notes || ""),
           updatedAt: new Date().toISOString(),
         });
