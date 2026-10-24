@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
   const sinceVerNum = sinceVer ? parseInt(sinceVer, 10) : 0;
 
   let maxDbTimestamp = 0;
+  let dbErrors: any[] = [];
 
   // If Supabase is configured, fetch persistent records from PostgreSQL
   if (isSupabaseConfigured) {
@@ -70,6 +71,11 @@ export async function GET(req: NextRequest) {
           }
         })(),
       ]);
+
+      if (progRes.error) dbErrors.push({ table: "task_progress", err: progRes.error.message });
+      if (recRes.error) dbErrors.push({ table: "recovery_assignments", err: recRes.error.message });
+      if (assessRes.error) dbErrors.push({ table: "assessment_results", err: assessRes.error.message });
+      if (customRes.error) dbErrors.push({ table: "custom_tasks", err: customRes.error.message });
 
       if (!progRes.error && progRes.data && progRes.data.length > 0) {
         serverSyncState.progress = progRes.data.map((p) => {
@@ -157,6 +163,7 @@ export async function GET(req: NextRequest) {
     hasUpdates,
     timestamp: durableTimestamp,
     serverVersion: durableVersion,
+    dbErrors: dbErrors && dbErrors.length > 0 ? dbErrors : undefined,
     data: sanitizeSyncState({
       ...serverSyncState,
       lastUpdated: durableTimestamp,
