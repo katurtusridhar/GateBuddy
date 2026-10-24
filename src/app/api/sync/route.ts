@@ -1,91 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
-// Server-side in-memory store initialized with real user schedule state from Oct 19-22, 2026
+// Server-side authoritative sync state
 const serverSyncState = {
   lastUpdated: Date.now(),
-  progress: [
-    {
-      taskId: "DL_44",
-      originalDate: "2026-10-21",
-      isCompleted: true,
-      completedAtTimestamp: 1729512000000,
-      completionType: "ON_TIME",
-      notes: "Completed on Wed Oct 21",
-    },
-  ] as any[],
-  recoveries: [
-    {
-      id: 101,
-      taskId: "DL_42",
-      originalDate: "2026-10-19",
-      recoveryDate: "2026-10-25",
-      assignedAtTimestamp: 1729340000000,
-      isCompleted: false,
-      priorityLevel: 2,
-      status: "MANUAL_CONFIRMED",
-    },
-    {
-      id: 102,
-      taskId: "CN_19",
-      originalDate: "2026-10-19",
-      recoveryDate: "2026-10-25",
-      assignedAtTimestamp: 1729340000000,
-      isCompleted: false,
-      priorityLevel: 2,
-      status: "MANUAL_CONFIRMED",
-    },
-    {
-      id: 103,
-      taskId: "DL_43",
-      originalDate: "2026-10-20",
-      recoveryDate: "2026-11-01",
-      assignedAtTimestamp: 1729426000000,
-      isCompleted: false,
-      priorityLevel: 2,
-      status: "MANUAL_CONFIRMED",
-    },
-    {
-      id: 104,
-      taskId: "CN_20",
-      originalDate: "2026-10-20",
-      recoveryDate: "2026-11-01",
-      assignedAtTimestamp: 1729426000000,
-      isCompleted: false,
-      priorityLevel: 2,
-      status: "MANUAL_CONFIRMED",
-    },
-    {
-      id: 105,
-      taskId: "CN_21",
-      originalDate: "2026-10-21",
-      recoveryDate: "2026-11-08",
-      assignedAtTimestamp: 1729512000000,
-      isCompleted: false,
-      priorityLevel: 2,
-      status: "MANUAL_CONFIRMED",
-    },
-    {
-      id: 106,
-      taskId: "DL_45",
-      originalDate: "2026-10-22",
-      recoveryDate: "2026-11-08",
-      assignedAtTimestamp: 1729598000000,
-      isCompleted: false,
-      priorityLevel: 2,
-      status: "MANUAL_CONFIRMED",
-    },
-    {
-      id: 107,
-      taskId: "CN_22",
-      originalDate: "2026-10-22",
-      recoveryDate: "2026-11-15",
-      assignedAtTimestamp: 1729598000000,
-      isCompleted: false,
-      priorityLevel: 2,
-      status: "MANUAL_CONFIRMED",
-    },
-  ] as any[],
+  progress: [] as any[],
+  recoveries: [] as any[],
   assessments: [] as any[],
   customTasks: [] as any[],
   settings: {
@@ -163,7 +83,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     status: "ok",
     backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
-    hasUpdates: serverSyncState.lastUpdated > sinceTs,
+    hasUpdates: !since || sinceTs === 0 || serverSyncState.lastUpdated > sinceTs,
     timestamp: serverSyncState.lastUpdated,
     data: serverSyncState,
   });

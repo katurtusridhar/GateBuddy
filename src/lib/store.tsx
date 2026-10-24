@@ -353,7 +353,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (res.ok) {
-        lastSyncTimestampRef.current = Date.now();
+        const json = await res.json();
+        lastSyncTimestampRef.current = json.timestamp || Date.now();
+        if (json.data) {
+          if (Array.isArray(json.data.progress) && json.data.progress.length > 0) {
+            setProgress((prev) => {
+              const map = new Map(prev);
+              json.data.progress.forEach((p: TaskProgress) => {
+                const existing = map.get(p.taskId);
+                if (!existing || (!existing.isCompleted && p.isCompleted)) {
+                  map.set(p.taskId, p);
+                }
+              });
+              return map;
+            });
+          }
+          if (Array.isArray(json.data.recoveries) && json.data.recoveries.length > 0) {
+            setRecoveries((prev) => {
+              const map = new Map(prev.map((r) => [r.taskId, r]));
+              json.data.recoveries.forEach((r: RecoveryAssignment) => map.set(r.taskId, r));
+              return Array.from(map.values());
+            });
+          }
+          if (Array.isArray(json.data.assessments) && json.data.assessments.length > 0) {
+            setAssessments(json.data.assessments);
+          }
+          if (Array.isArray(json.data.customTasks) && json.data.customTasks.length > 0) {
+            setCustomTasks(json.data.customTasks);
+          }
+          if (json.data.settings) setSettings(json.data.settings);
+        }
         setSyncStatus("synced");
       } else {
         setSyncStatus("offline");
@@ -363,7 +392,57 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [progress, recoveries, assessments, customTasks, settings, achievements, credentials]);
 
-  // Background realtime pull every 4 seconds to catch Android phone updates instantly
+  // Initial pull on mount to fetch remote database state immediately
+  useEffect(() => {
+    if (!isLoaded) return;
+    let isCancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/sync?since=0");
+        if (!res.ok || isCancelled) return;
+        const result = await res.json();
+        if (result.data) {
+          lastSyncTimestampRef.current = result.timestamp || Date.now();
+          if (Array.isArray(result.data.progress) && result.data.progress.length > 0) {
+            setProgress((prev) => {
+              const map = new Map(prev);
+              result.data.progress.forEach((p: TaskProgress) => {
+                const existing = map.get(p.taskId);
+                if (!existing || (!existing.isCompleted && p.isCompleted)) {
+                  map.set(p.taskId, p);
+                }
+              });
+              return map;
+            });
+          }
+          if (Array.isArray(result.data.recoveries) && result.data.recoveries.length > 0) {
+            setRecoveries((prev) => {
+              const map = new Map(prev.map((r) => [r.taskId, r]));
+              result.data.recoveries.forEach((r: RecoveryAssignment) => map.set(r.taskId, r));
+              return Array.from(map.values());
+            });
+          }
+          if (Array.isArray(result.data.assessments) && result.data.assessments.length > 0) {
+            setAssessments(result.data.assessments);
+          }
+          if (Array.isArray(result.data.customTasks) && result.data.customTasks.length > 0) {
+            setCustomTasks(result.data.customTasks);
+          }
+          if (result.data.settings) {
+            setSettings(result.data.settings);
+          }
+          setSyncStatus("synced");
+        }
+      } catch (e) {
+        console.warn("Initial sync pull error", e);
+      }
+    })();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isLoaded]);
+
+  // Background realtime pull every 3 seconds to catch Android phone updates instantly
   useEffect(() => {
     if (!isLoaded) return;
     const interval = setInterval(async () => {
@@ -374,12 +453,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (result.hasUpdates && result.data) {
           lastSyncTimestampRef.current = result.timestamp;
           if (Array.isArray(result.data.progress)) {
-            const map = new Map<string, TaskProgress>();
-            result.data.progress.forEach((p: TaskProgress) => map.set(p.taskId, p));
-            setProgress(map);
+            setProgress((prev) => {
+              const map = new Map(prev);
+              result.data.progress.forEach((p: TaskProgress) => {
+                const existing = map.get(p.taskId);
+                if (!existing || existing.isCompleted !== p.isCompleted) {
+                  map.set(p.taskId, p);
+                }
+              });
+              return map;
+            });
           }
           if (Array.isArray(result.data.recoveries)) {
-            setRecoveries(result.data.recoveries);
+            setRecoveries((prev) => {
+              const map = new Map(prev.map((r) => [r.taskId, r]));
+              result.data.recoveries.forEach((r: RecoveryAssignment) => map.set(r.taskId, r));
+              return Array.from(map.values());
+            });
           }
           if (Array.isArray(result.data.assessments)) {
             setAssessments(result.data.assessments);
@@ -395,7 +485,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // silent background network error
       }
-    }, 4000);
+    }, 3000);
     return () => clearInterval(interval);
   }, [isLoaded]);
 
