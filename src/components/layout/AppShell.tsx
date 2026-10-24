@@ -88,8 +88,8 @@ export function AppShell({ children }: AppShellProps) {
       {/* Desktop Sidebar */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-[#26354F] bg-[#0F172A] p-4 lg:flex">
         {/* Brand Header */}
-        <div className="flex items-center gap-3 border-b border-[#26354F]/80 pb-4">
-          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-sky-400/40 bg-[#090D16] p-0.5 shadow-[0_0_15px_rgba(14,165,233,0.3)]">
+        <Link href="/" className="flex items-center gap-3 border-b border-[#26354F]/80 pb-4 group cursor-pointer transition hover:opacity-90">
+          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-sky-400/40 bg-[#090D16] p-0.5 shadow-[0_0_15px_rgba(14,165,233,0.3)] transition group-hover:scale-105">
             <Image
               src="/cropped_circle_image.png"
               alt="GateBuddy IIT Bombay Logo"
@@ -107,7 +107,7 @@ export function AppShell({ children }: AppShellProps) {
               Mission IIT Bombay
             </p>
           </div>
-        </div>
+        </Link>
 
         {/* User Card */}
         <div className="mt-4 rounded-xl border border-[#26354F] bg-[#151F32] p-3">
@@ -182,7 +182,11 @@ export function AppShell({ children }: AppShellProps) {
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#26354F] bg-[#0F172A]/90 px-4 backdrop-blur-md lg:px-8">
           <div className="flex items-center gap-3">
             {/* Mobile Brand Logo */}
-            <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-sky-400/40 bg-[#090D16] p-0.5 lg:hidden">
+            <Link
+              href="/"
+              title="Go to Home"
+              className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-sky-400/40 bg-[#090D16] p-0.5 lg:hidden cursor-pointer hover:opacity-90 transition"
+            >
               <Image
                 src="/cropped_circle_image.png"
                 alt="GateBuddy"
@@ -190,7 +194,7 @@ export function AppShell({ children }: AppShellProps) {
                 height={36}
                 className="h-full w-full object-contain"
               />
-            </div>
+            </Link>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-bold tracking-wider text-sky-400 uppercase">

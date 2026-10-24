@@ -36,16 +36,18 @@ export default function LoginPage() {
       <div className="w-full max-w-md rounded-2xl border border-[#26354F] bg-[#0F172A] p-7 sm:p-8 shadow-2xl">
         {/* Brand Header with IIT Bombay Logo */}
         <div className="text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-sky-400/40 bg-[#090D16] p-1 shadow-[0_0_20px_rgba(14,165,233,0.3)]">
-            <Image
-              src="/cropped_circle_image.png"
-              alt="GateBuddy Logo"
-              width={60}
-              height={60}
-              className="h-full w-full object-contain"
-              priority
-            />
-          </div>
+          <Link href="/" title="Go to Home" className="inline-block transition hover:scale-105 cursor-pointer">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-sky-400/40 bg-[#090D16] p-1 shadow-[0_0_20px_rgba(14,165,233,0.3)]">
+              <Image
+                src="/cropped_circle_image.png"
+                alt="GateBuddy Logo"
+                width={60}
+                height={60}
+                className="h-full w-full object-contain"
+                priority
+              />
+            </div>
+          </Link>
           <h2 className="mt-4 text-2xl font-black text-white">Sign In to GateBuddy</h2>
           <p className="mt-1 text-xs text-slate-400">Personal GATE Preparation Command Center</p>
         </div>

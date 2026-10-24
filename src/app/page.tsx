@@ -13,8 +13,8 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[#090D16] text-slate-100 font-sans">
       {/* Top Navigation Bar - Responsive & Optimized for Mobile */}
       <header className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 sm:py-5 border-b border-[#26354F]/40">
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-          <div className="relative h-9 w-9 sm:h-11 sm:w-11 shrink-0 overflow-hidden rounded-xl border border-sky-400/40 bg-[#090D16] p-0.5 shadow-[0_0_15px_rgba(14,165,233,0.3)]">
+        <Link href="/" title="GateBuddy Home" className="flex items-center gap-2.5 sm:gap-3 min-w-0 group cursor-pointer hover:opacity-90 transition">
+          <div className="relative h-9 w-9 sm:h-11 sm:w-11 shrink-0 overflow-hidden rounded-xl border border-sky-400/40 bg-[#090D16] p-0.5 shadow-[0_0_15px_rgba(14,165,233,0.3)] transition group-hover:scale-105">
             <Image
               src="/cropped_circle_image.png"
               alt="GateBuddy Logo"
@@ -32,7 +32,7 @@ export default function LandingPage() {
               IIT BOMBAY CSE
             </span>
           </div>
-        </div>
+        </Link>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
