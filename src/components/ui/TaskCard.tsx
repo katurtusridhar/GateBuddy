@@ -163,21 +163,23 @@ export function TaskCard({ task, onToggleComplete, onOpenReschedule }: TaskCardP
 
         {/* Action Toggle / Status Button (36px Circle) */}
         <div className="shrink-0 pt-0.5">
-          {isLockedPast ? (
+          {task.isCompleted ? (
+            // Completed: Always interactive so user can uncheck/unselect anytime!
+            <button
+              onClick={handleToggle}
+              disabled={isSubmitting}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-500 bg-emerald-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)] transition hover:bg-emerald-400 cursor-pointer"
+              title="Completed • Click to unselect"
+            >
+              <Check className="h-4 w-4 stroke-[3]" />
+            </button>
+          ) : isLockedPast ? (
             // Past Missed: Rose circle with X
             <div
               className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-500/70 bg-rose-950/40 text-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.2)]"
               title="Missed in past (Locked). Reschedule below."
             >
               <CloseIcon className="h-4 w-4 stroke-[2.5]" />
-            </div>
-          ) : task.isPast && task.isCompleted ? (
-            // Past Completed: Emerald circle with check
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-500/70 bg-emerald-950/40 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)]"
-              title="Completed in past (Locked)"
-            >
-              <Check className="h-4 w-4 stroke-[3]" />
             </div>
           ) : task.isFuture ? (
             // Future locked
@@ -192,16 +194,9 @@ export function TaskCard({ task, onToggleComplete, onOpenReschedule }: TaskCardP
             <button
               onClick={handleToggle}
               disabled={isSubmitting}
-              className={clsx(
-                "flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-200",
-                task.isCompleted
-                  ? "border-emerald-500 bg-emerald-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-                  : "border-slate-600 bg-slate-800/80 text-slate-400 hover:border-sky-400 hover:text-white"
-              )}
-              title={task.isCompleted ? "Click to uncheck" : "Click to mark done"}
-            >
-              {task.isCompleted && <Check className="h-4 w-4 stroke-[3]" />}
-            </button>
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-600 bg-slate-800/80 text-slate-400 hover:border-sky-400 hover:text-white transition cursor-pointer"
+              title="Click to mark done"
+            />
           )}
         </div>
       </div>

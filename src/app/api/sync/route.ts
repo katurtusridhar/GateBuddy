@@ -94,28 +94,20 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
 
-    // Apply idempotent merge for progress (Preserving completion status from both clients)
+    // Apply authoritative merge for progress (Allowing both check and uncheck)
     if (Array.isArray(progress)) {
       const existingMap = new Map(serverSyncState.progress.map((p) => [p.taskId, p]));
       for (const p of progress) {
         const existing = existingMap.get(p.taskId);
-        if (!existing) {
-          existingMap.set(p.taskId, { ...p, updatedAt: new Date().toISOString() });
-        } else {
-          const isCompleted = p.isCompleted || existing.isCompleted;
-          const completedAtTimestamp = p.completedAtTimestamp || existing.completedAtTimestamp;
-          const completionType = p.completionType || existing.completionType;
-          const notes = p.notes || existing.notes;
-          existingMap.set(p.taskId, {
-            ...existing,
-            ...p,
-            isCompleted,
-            completedAtTimestamp,
-            completionType,
-            notes,
-            updatedAt: new Date().toISOString(),
-          });
-        }
+        existingMap.set(p.taskId, {
+          ...(existing || {}),
+          ...p,
+          isCompleted: p.isCompleted === true,
+          completedAtTimestamp: p.isCompleted ? (p.completedAtTimestamp || Date.now()) : null,
+          completionType: p.isCompleted ? (p.completionType || "ON_TIME") : null,
+          notes: p.notes !== undefined ? p.notes : (existing?.notes || ""),
+          updatedAt: new Date().toISOString(),
+        });
       }
       serverSyncState.progress = Array.from(existingMap.values());
     }
@@ -163,9 +155,9 @@ export async function POST(req: NextRequest) {
           const rows = progress.map((p) => ({
             task_id: p.taskId,
             original_date: p.originalDate,
-            is_completed: p.isCompleted,
-            completed_at: p.completedAtTimestamp ? new Date(p.completedAtTimestamp).toISOString() : null,
-            completion_type: p.completionType,
+            is_completed: p.isCompleted === true,
+            completed_at: p.isCompleted && p.completedAtTimestamp ? new Date(p.completedAtTimestamp).toISOString() : null,
+            completion_type: p.isCompleted ? p.completionType : null,
             notes: p.notes || "",
             updated_at: new Date().toISOString(),
           }));

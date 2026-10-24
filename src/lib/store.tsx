@@ -361,7 +361,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const map = new Map(prev);
               json.data.progress.forEach((p: TaskProgress) => {
                 const existing = map.get(p.taskId);
-                if (!existing || (!existing.isCompleted && p.isCompleted)) {
+                if (!existing || existing.isCompleted !== p.isCompleted) {
                   map.set(p.taskId, p);
                 }
               });
@@ -408,7 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               const map = new Map(prev);
               result.data.progress.forEach((p: TaskProgress) => {
                 const existing = map.get(p.taskId);
-                if (!existing || (!existing.isCompleted && p.isCompleted)) {
+                if (!existing || existing.isCompleted !== p.isCompleted) {
                   map.set(p.taskId, p);
                 }
               });
@@ -1029,9 +1029,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const targetTask = tasks.find((t) => t.id === cleanId);
       if (!targetTask) return { success: false, error: "Task not found" };
 
-      const rec = recoveries.find(
-        (r) => r.taskId === cleanId && (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED")
-      );
+      const rec = recoveries.find((r) => r.taskId === cleanId);
 
       const effectiveDate = rec ? rec.recoveryDate : targetTask.date;
 
@@ -1063,10 +1061,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       setProgress((prev) => new Map(prev).set(cleanId, updatedProg));
 
-      if (rec && newIsDone) {
+      if (rec) {
         setRecoveries((prev) =>
           prev.map((r) =>
-            r.taskId === cleanId ? { ...r, isCompleted: true, status: "COMPLETED", completedAtTimestamp: Date.now() } : r
+            r.taskId === cleanId
+              ? {
+                  ...r,
+                  isCompleted: newIsDone,
+                  status: newIsDone ? "COMPLETED" : "MANUAL_CONFIRMED",
+                  completedAtTimestamp: newIsDone ? Date.now() : null,
+                }
+              : r
           )
         );
       }
