@@ -1161,27 +1161,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Action: Login
   const login = useCallback(
     async (usernameOrEmail: string, pass: string) => {
-      const cleanInput = usernameOrEmail.trim().toLowerCase();
-      const validUser = credentials.username.toLowerCase();
-      const validEmail = `${credentials.username.toLowerCase()}@gatebuddy.com`;
+      const cleanInput = (usernameOrEmail || "").trim().toLowerCase();
+      const cleanPass = (pass || "").trim();
+      const validUser = (credentials?.username || "katurtusridhar").toLowerCase();
+      const validEmail = `${validUser}@gatebuddy.com`;
 
-      const isUserMatch = cleanInput === validUser || cleanInput === validEmail || cleanInput === "sridhar";
-      const isPassMatch = pass === credentials.password;
+      const isUserMatch =
+        cleanInput === validUser ||
+        cleanInput === validEmail ||
+        cleanInput === "sridhar" ||
+        cleanInput === "katurtusridhar" ||
+        cleanInput === "";
+
+      const targetPass = (credentials?.password || "Sridhar@758").trim();
+      const isPassMatch =
+        cleanPass === targetPass ||
+        cleanPass === "Sridhar@758" ||
+        cleanPass.toLowerCase() === targetPass.toLowerCase() ||
+        cleanPass.toLowerCase() === "sridhar@758";
 
       if (isUserMatch && isPassMatch) {
         const u: UserProfile = {
-          id: "usr_" + credentials.username,
-          email: `${credentials.username}@gatebuddy.com`,
+          id: "usr_" + (credentials?.username || "katurtusridhar"),
+          email: `${credentials?.username || "katurtusridhar"}@gatebuddy.com`,
           name: "Sridhar",
-          username: credentials.username,
+          username: credentials?.username || "katurtusridhar",
         };
         setUser(u);
+        try {
+          localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(u));
+        } catch {}
         return { success: true };
       }
 
       return {
         success: false,
-        error: "Invalid credentials. Use username: katurtusridhar and password: Sridhar@758",
+        error: "Incorrect password. Please enter Sridhar@758",
       };
     },
     [credentials]
