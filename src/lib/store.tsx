@@ -373,7 +373,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         const res = await fetch("/api/sync", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "x-gatebuddy-client-key": "gb_companion_secure_sync_2026_tok",
+          },
           body: JSON.stringify(payload),
         });
 
@@ -397,7 +400,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     let isCancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/sync?since=0");
+        const res = await fetch("/api/sync?since=0", {
+          headers: { "x-gatebuddy-client-key": "gb_companion_secure_sync_2026_tok" },
+        });
         if (!res.ok || isCancelled) return;
         const result = await res.json();
         if (result.data) {
@@ -480,7 +485,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!isLoaded) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/sync?since=${lastSyncTimestampRef.current}`);
+        const res = await fetch(`/api/sync?since=${lastSyncTimestampRef.current}`, {
+          headers: { "x-gatebuddy-client-key": "gb_companion_secure_sync_2026_tok" },
+        });
         if (!res.ok) return;
         const result = await res.json();
         if (result.hasUpdates && result.data) {
@@ -1063,7 +1070,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const rec = recoveries.find(
           (r) => r.taskId === t.id && (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED")
         );
-        if (!rec) {
+        const hasValidFutureRecovery = Boolean(
+          rec && compareDateStrings(rec.recoveryDate, todayDateStr) >= 0
+        );
+        if (!hasValidFutureRecovery) {
           list.push({
             id: t.id,
             originalDate: t.date,

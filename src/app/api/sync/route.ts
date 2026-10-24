@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import {
+  verifyRequestAuthorization,
+  sanitizeSyncState,
+  updateServerCredentials,
+  serverCredentials,
+} from "@/lib/serverAuth";
 
 // Server-side authoritative sync state
 const serverSyncState = {
@@ -23,13 +29,20 @@ const serverSyncState = {
   },
   achievements: [] as any[],
   credentials: {
-    username: "katurtusridhar",
-    password: "Sridhar@758",
-    masterCode: "oA-THL,UXyh6",
+    username: serverCredentials.username,
   },
 };
 
 export async function GET(req: NextRequest) {
+  // Enforce authentication & API authorization
+  const isAuthorized = await verifyRequestAuthorization(req);
+  if (!isAuthorized) {
+    return NextResponse.json(
+      { status: "unauthorized", message: "Authorization required. Please log in or provide client key." },
+      { status: 401 }
+    );
+  }
+
   const { searchParams } = new URL(req.url);
   const since = searchParams.get("since");
   const sinceTs = since ? parseInt(since, 10) : 0;
@@ -85,12 +98,21 @@ export async function GET(req: NextRequest) {
     backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
     hasUpdates: !since || sinceTs === 0 || serverSyncState.lastUpdated > sinceTs,
     timestamp: serverSyncState.lastUpdated,
-    data: serverSyncState,
+    data: sanitizeSyncState(serverSyncState),
   });
 }
 
 export async function POST(req: NextRequest) {
   try {
+    // Enforce authentication & API authorization
+    const isAuthorized = await verifyRequestAuthorization(req);
+    if (!isAuthorized) {
+      return NextResponse.json(
+        { status: "unauthorized", message: "Authorization required. Please log in or provide client key." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
 
@@ -161,7 +183,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (credentials) {
-      serverSyncState.credentials = credentials;
+      if (credentials.username && credentials.password && credentials.masterCode) {
+        updateServerCredentials(credentials.username, credentials.password, credentials.masterCode);
+      }
+      serverSyncState.credentials = { username: credentials.username || serverCredentials.username };
     }
 
     serverSyncState.lastUpdated = Date.now();
@@ -204,7 +229,7 @@ export async function POST(req: NextRequest) {
       backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
       timestamp: serverSyncState.lastUpdated,
       serverVersion: 1,
-      data: serverSyncState,
+      data: sanitizeSyncState(serverSyncState),
     });
   } catch (error: any) {
     return NextResponse.json(

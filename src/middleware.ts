@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { verifySessionToken, AUTH_COOKIE_NAME } from "./lib/serverAuth";
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const authCookie = request.cookies.get("gatebuddy_auth");
-  const isAuthenticated = authCookie?.value === "authenticated";
+  const authCookie = request.cookies.get(AUTH_COOKIE_NAME);
+  const sessionCheck = await verifySessionToken(authCookie?.value);
+  const isAuthenticated = sessionCheck.valid;
 
   // Strict list of protected application paths
   const protectedPrefixes = [
