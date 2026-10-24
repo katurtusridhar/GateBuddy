@@ -67,7 +67,7 @@ export default function DashboardPage() {
     setIsUpdatingCreds(true);
     const res = await changeCredentials(
       newUsernameInput.trim() || credentials.username,
-      newPasswordInput.trim() || credentials.password,
+      newPasswordInput.trim() || credentials.password || "",
       masterCodeInput.trim()
     );
 

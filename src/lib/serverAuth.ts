@@ -2,16 +2,37 @@
 // Compatible with both Node.js API routes and Next.js Edge Middleware
 
 export const AUTH_COOKIE_NAME = "gatebuddy_auth";
-export const CLIENT_API_KEY = "gb_companion_secure_sync_2026_tok";
+export const CLIENT_API_KEY = process.env.GATEBUDDY_CLIENT_KEY || "gb_companion_secure_sync_2026_tok";
 
 const SECRET_SEED = process.env.GATEBUDDY_AUTH_SECRET || "gatebuddy_secret_auth_key_v2_2026_iit_bombay";
 
-// Authoritative in-memory credentials store
+// Authoritative in-memory credentials store (configurable via environment variables)
 export const serverCredentials = {
-  username: "katurtusridhar",
-  password: "Sridhar@758",
-  masterCode: "oA-THL,UXyh6",
+  username: process.env.GATEBUDDY_DEFAULT_USER || "katurtusridhar",
+  password: process.env.GATEBUDDY_DEFAULT_PASSWORD || "Sridhar@758",
+  masterCode: process.env.GATEBUDDY_MASTER_CODE || "oA-THL,UXyh6",
 };
+
+/**
+ * Constant-time string equality check to prevent timing attacks.
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+/**
+ * Validates master authorization code using constant-time comparison.
+ */
+export function verifyMasterCode(masterCodeInput: string): boolean {
+  const cleanInput = (masterCodeInput || "").trim();
+  const validMaster = (serverCredentials.masterCode || "").trim();
+  return timingSafeEqual(cleanInput, validMaster);
+}
 
 /**
  * Creates an HMAC-SHA256 signature using the standard Web Crypto API.
@@ -87,26 +108,23 @@ export async function verifySessionToken(token: string | undefined | null): Prom
 
 /**
  * Checks if an incoming HTTP request is authorized.
- * Allows:
- * 1. Native Android client sending 'x-gatebuddy-client-key' or 'Authorization: Bearer <key>'
- * 2. Web browser sending a valid signed 'gatebuddy_auth' session cookie
+ * Accepts:
+ * 1. Cryptographically signed Bearer session token (Android or API clients)
+ * 2. Cryptographically signed 'gatebuddy_auth' session cookie (Web browsers)
+ * 3. Client API key during transition
  */
 export async function verifyRequestAuthorization(req: Request): Promise<boolean> {
-  // Check client API key (used by Android application)
-  const clientKey = req.headers.get("x-gatebuddy-client-key");
-  if (clientKey === CLIENT_API_KEY) {
-    return true;
-  }
-
+  // 1. Check Bearer token in Authorization header (cryptographically signed user session token)
   const authHeader = req.headers.get("authorization");
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const bearerToken = authHeader.substring(7).trim();
-    if (bearerToken === CLIENT_API_KEY) {
+    const tokenResult = await verifySessionToken(bearerToken);
+    if (tokenResult.valid) {
       return true;
     }
   }
 
-  // Check web session cookie
+  // 2. Check signed web session cookie
   const cookieHeader = req.headers.get("cookie") || "";
   const match = cookieHeader.match(new RegExp(`(?:^|;\\s*)${AUTH_COOKIE_NAME}=([^;]+)`));
   const cookieVal = match ? match[1] : null;
@@ -118,6 +136,8 @@ export async function verifyRequestAuthorization(req: Request): Promise<boolean>
     }
   }
 
+  // Static client keys are NO LONGER trusted as proof of identity.
+  // All callers must present an authenticated user-scoped session token or cookie.
   return false;
 }
 
@@ -136,10 +156,8 @@ export function checkUserLogin(usernameInput: string, passwordInput: string) {
     cleanUser === `${validUsername}@gatebuddy.com`;
 
   const isPasswordMatch =
-    cleanPass === serverCredentials.password ||
-    cleanPass.toLowerCase() === serverCredentials.password.toLowerCase() ||
-    cleanPass === "Sridhar@758" ||
-    cleanPass.toLowerCase() === "sridhar@758";
+    timingSafeEqual(cleanPass, serverCredentials.password) ||
+    timingSafeEqual(cleanPass.toLowerCase(), serverCredentials.password.toLowerCase());
 
   if (isUsernameMatch && isPasswordMatch) {
     return {
@@ -157,19 +175,21 @@ export function checkUserLogin(usernameInput: string, passwordInput: string) {
 }
 
 /**
- * Updates credentials after verifying master code.
+ * Updates credentials after verifying master code with constant-time comparison.
  */
-export function updateServerCredentials(newUsername: string, newPass: string, masterCode: string) {
-  if (masterCode.trim() !== serverCredentials.masterCode) {
+export function updateServerCredentials(newUsername: string, newPass?: string, masterCode?: string) {
+  if (!masterCode || !verifyMasterCode(masterCode)) {
     return { success: false, error: "Master Security Code invalid. Authorization denied." };
   }
 
-  if (!newUsername.trim() || !newPass.trim()) {
-    return { success: false, error: "Username and password cannot be empty." };
+  if (!newUsername.trim()) {
+    return { success: false, error: "Username cannot be empty." };
   }
 
   serverCredentials.username = newUsername.trim();
-  serverCredentials.password = newPass.trim();
+  if (newPass && newPass.trim()) {
+    serverCredentials.password = newPass.trim();
+  }
 
   return { success: true };
 }

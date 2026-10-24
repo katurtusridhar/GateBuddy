@@ -30,8 +30,6 @@ export interface UserProfile {
 
 export const DEFAULT_CREDENTIALS: UserCredentials = {
   username: "katurtusridhar",
-  password: "Sridhar@758",
-  masterCode: "oA-THL,UXyh6",
 };
 
 // Seed user data matching real Android app state over Oct 19-22, 2026
@@ -1414,33 +1412,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Action: Master Code Protected Credential Modification
   const changeCredentials = useCallback(
     async (newUsername: string, newPass: string, masterCode: string) => {
-      if (masterCode.trim() !== credentialsRef.current.masterCode) {
+      try {
+        const response = await fetch("/api/auth/reset-credentials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            newUsername: newUsername.trim(),
+            newPassword: newPass ? newPass.trim() : undefined,
+            masterCode: masterCode.trim(),
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          return {
+            success: false,
+            error: data.error || "Master Security Code invalid. Authorization denied.",
+          };
+        }
+
+        const effectiveUsername = data.username || newUsername.trim();
+        const updated: UserCredentials = {
+          username: effectiveUsername,
+        };
+
+        credentialsRef.current = updated;
+        setCredentials(updated);
+        setUser((prev) =>
+          prev
+            ? { ...prev, username: updated.username, name: updated.username }
+            : { id: "usr_" + updated.username, email: `${updated.username}@gatebuddy.com`, name: updated.username, username: updated.username }
+        );
+
+        syncWithCloud();
+        return { success: true };
+      } catch (err: any) {
         return {
           success: false,
-          error: "Master Security Code invalid. Authorization denied. Please enter the correct master code to modify credentials.",
+          error: err?.message || "Failed to contact server to update credentials.",
         };
       }
-
-      if (!newUsername.trim() || !newPass.trim()) {
-        return { success: false, error: "Username and password cannot be empty." };
-      }
-
-      const updated: UserCredentials = {
-        username: newUsername.trim(),
-        password: newPass.trim(),
-        masterCode: credentialsRef.current.masterCode,
-      };
-
-      credentialsRef.current = updated;
-      setCredentials(updated);
-      setUser((prev) =>
-        prev
-          ? { ...prev, username: updated.username, name: updated.username }
-          : { id: "usr_custom", email: `${updated.username}@gatebuddy.com`, name: updated.username, username: updated.username }
-      );
-
-      syncWithCloud();
-      return { success: true };
     },
     [syncWithCloud]
   );
@@ -1448,51 +1459,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Action: Login
   const login = useCallback(
     async (usernameOrEmail: string, pass: string) => {
-      const cleanInput = (usernameOrEmail || "").trim().toLowerCase();
+      const cleanInput = (usernameOrEmail || "").trim();
       const cleanPass = (pass || "").trim();
-      const validUser = (credentials?.username || "katurtusridhar").toLowerCase();
-      const validEmail = `${validUser}@gatebuddy.com`;
 
-      const isUserMatch =
-        cleanInput === validUser ||
-        cleanInput === validEmail ||
-        cleanInput === "sridhar" ||
-        cleanInput === "katurtusridhar";
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: cleanInput, password: cleanPass }),
+        });
 
-      const targetPass = (credentials?.password || "Sridhar@758").trim();
-      const isPassMatch =
-        cleanPass === targetPass ||
-        cleanPass === "Sridhar@758" ||
-        cleanPass.toLowerCase() === targetPass.toLowerCase();
+        const data = await res.json();
+        if (res.ok && data.success && data.user) {
+          setUser(data.user);
+          try {
+            localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(data.user));
+          } catch {}
+          return { success: true };
+        }
 
-      if (isUserMatch && isPassMatch) {
-        const u: UserProfile = {
-          id: "usr_" + (credentials?.username || "katurtusridhar"),
-          email: `${credentials?.username || "katurtusridhar"}@gatebuddy.com`,
-          name: "Sridhar",
-          username: credentials?.username || "katurtusridhar",
+        return {
+          success: false,
+          error: data.error || "Invalid username or password. Please try again.",
         };
-        setUser(u);
-        try {
-          if (typeof document !== "undefined") {
-            document.cookie = "gatebuddy_auth=authenticated; path=/; max-age=2592000; SameSite=Lax";
-          }
-          localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(u));
-          await fetch("/api/auth/login", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username: cleanInput, password: cleanPass }),
-          });
-        } catch {}
-        return { success: true };
+      } catch {
+        return {
+          success: false,
+          error: "Connection error during login. Please try again.",
+        };
       }
-
-      return {
-        success: false,
-        error: "Invalid username or password. Please try again.",
-      };
     },
-    [credentials]
+    []
   );
 
   const register = useCallback(

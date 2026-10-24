@@ -223,14 +223,12 @@ export interface TaskItemUi {
 
 export interface UserCredentials {
   username: string;
-  password: string;
-  masterCode: string;
+  password?: string;
+  masterCode?: string;
 }
 
 export const DEFAULT_CREDENTIALS: UserCredentials = {
   username: "katurtusridhar",
-  password: "Sridhar@758",
-  masterCode: "oA-THL,UXyh6",
 };
 
 export type SyncState = "synced" | "syncing" | "offline" | "error" | "pending";

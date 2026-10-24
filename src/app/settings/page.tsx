@@ -49,7 +49,7 @@ export default function SettingsPage() {
     setIsUpdatingCreds(true);
     const res = await changeCredentials(
       newUsernameInput,
-      newPasswordInput || credentials.password,
+      newPasswordInput || credentials.password || "",
       masterCodeInput
     );
 
@@ -281,7 +281,7 @@ export default function SettingsPage() {
                     className="mt-1.5 w-full rounded-xl border border-amber-500/50 bg-[#151F32] px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:border-amber-400 focus:outline-none"
                   />
                   <p className="mt-1 text-[11px] text-slate-400">
-                    Master Code: <code className="text-amber-300 font-mono">oA-THL,UXyh6</code>
+                    Enter the Master Security Code configured for this ecosystem to authorize credential modifications.
                   </p>
                 </div>
 

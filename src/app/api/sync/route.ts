@@ -11,7 +11,7 @@ let globalServerVersion = 1;
 
 // Server-side authoritative sync state
 const serverSyncState = {
-  lastUpdated: Date.now(),
+  lastUpdated: 0,
   serverVersion: globalServerVersion,
   progress: [] as any[],
   recoveries: [] as any[],
@@ -37,11 +37,11 @@ const serverSyncState = {
 };
 
 export async function GET(req: NextRequest) {
-  // Enforce authentication & API authorization
+  // Enforce user-scoped cryptographic authentication & API authorization
   const isAuthorized = await verifyRequestAuthorization(req);
   if (!isAuthorized) {
     return NextResponse.json(
-      { status: "unauthorized", message: "Authorization required. Please log in or provide client key." },
+      { status: "unauthorized", message: "User authorization required. Provide valid Bearer session token or auth cookie." },
       { status: 401 }
     );
   }
@@ -51,6 +51,8 @@ export async function GET(req: NextRequest) {
   const sinceTs = since ? parseInt(since, 10) : 0;
   const sinceVer = searchParams.get("version");
   const sinceVerNum = sinceVer ? parseInt(sinceVer, 10) : 0;
+
+  let maxDbTimestamp = 0;
 
   // If Supabase is configured, fetch persistent records from PostgreSQL
   if (isSupabaseConfigured) {
@@ -68,8 +70,6 @@ export async function GET(req: NextRequest) {
           }
         })(),
       ]);
-
-      let maxDbTimestamp = 0;
 
       if (!progRes.error && progRes.data && progRes.data.length > 0) {
         serverSyncState.progress = progRes.data.map((p) => {
@@ -132,37 +132,46 @@ export async function GET(req: NextRequest) {
         serverSyncState.achievements = Array.from(existingMap.values());
       }
 
-      if (maxDbTimestamp > serverSyncState.lastUpdated) {
+      if (maxDbTimestamp > 0) {
         serverSyncState.lastUpdated = maxDbTimestamp;
+        globalServerVersion = maxDbTimestamp;
       }
     } catch {
       // Fallback to in-memory state on query failure
     }
   }
 
+  // Calculate durable revision cursors across cold starts and independent lambda instances
+  const durableTimestamp = maxDbTimestamp > 0 ? maxDbTimestamp : serverSyncState.lastUpdated;
+  const durableVersion = maxDbTimestamp > 0 ? maxDbTimestamp : globalServerVersion;
+
   const hasUpdates =
     !since ||
     sinceTs === 0 ||
-    serverSyncState.lastUpdated > sinceTs ||
-    (sinceVerNum > 0 && globalServerVersion > sinceVerNum);
+    durableTimestamp > sinceTs ||
+    (sinceVerNum > 0 && durableVersion > sinceVerNum);
 
   return NextResponse.json({
     status: "ok",
     backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
     hasUpdates,
-    timestamp: serverSyncState.lastUpdated,
-    serverVersion: globalServerVersion,
-    data: sanitizeSyncState(serverSyncState),
+    timestamp: durableTimestamp,
+    serverVersion: durableVersion,
+    data: sanitizeSyncState({
+      ...serverSyncState,
+      lastUpdated: durableTimestamp,
+      serverVersion: durableVersion,
+    }),
   });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // Enforce authentication & API authorization
+    // Enforce user-scoped cryptographic authentication & API authorization
     const isAuthorized = await verifyRequestAuthorization(req);
     if (!isAuthorized) {
       return NextResponse.json(
-        { status: "unauthorized", message: "Authorization required. Please log in or provide client key." },
+        { status: "unauthorized", message: "User authorization required. Provide valid Bearer session token or auth cookie." },
         { status: 401 }
       );
     }
@@ -170,8 +179,9 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
 
-    const mutationTimestamp = Math.max(Date.now(), serverSyncState.lastUpdated + 1);
-    globalServerVersion++;
+    const baseTimestamp = Math.max(serverSyncState.lastUpdated, globalServerVersion);
+    const mutationTimestamp = Math.max(Date.now(), baseTimestamp + 1);
+    globalServerVersion = mutationTimestamp;
 
     // Apply authoritative merge for progress with deterministic conflict resolution
     if (Array.isArray(progress)) {

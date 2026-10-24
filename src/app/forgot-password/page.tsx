@@ -23,20 +23,30 @@ export default function ForgotPasswordPage() {
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Verify Master Code
-  const handleVerifyMasterCode = (e: React.FormEvent) => {
+  // Verify Master Code via server endpoint (zero client-side secrets)
+  const handleVerifyMasterCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setIsLoading(true);
 
-    const validMasterCode = (credentials.masterCode || "oA-THL,UXyh6").trim();
-    if (masterCode.trim() !== validMasterCode) {
-      setError("Invalid Master Authorization Code. Access denied.");
-      return;
+    try {
+      const res = await fetch("/api/auth/verify-master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ masterCode: masterCode.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsMasterCodeVerified(true);
+        setUsernameInput(data.username || "katurtusridhar");
+      } else {
+        setError(data.error || "Invalid Master Authorization Code. Access denied.");
+      }
+    } catch {
+      setError("Network error while verifying authorization code.");
+    } finally {
+      setIsLoading(false);
     }
-
-    // Success: reveal current username and unlock reset form
-    setIsMasterCodeVerified(true);
-    setUsernameInput(credentials.username || "katurtusridhar");
   };
 
   // Submit Password / Username Update
