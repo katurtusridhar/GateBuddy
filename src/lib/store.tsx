@@ -156,11 +156,14 @@ const STORAGE_KEY_PREFIX = "gatebuddy_v2_";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [credentials, setCredentials] = useState<UserCredentials>(DEFAULT_CREDENTIALS);
-  const [user, setUser] = useState<UserProfile | null>({
-    id: "usr_katurtusridhar",
-    email: "katurtusridhar@gatebuddy.com",
-    name: "Sridhar",
-    username: "katurtusridhar",
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(`${STORAGE_KEY_PREFIX}user`);
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return null;
   });
 
   const [tasks] = useState<ScheduleTask[]>(rawScheduleData.tasks as ScheduleTask[]);
@@ -1170,15 +1173,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         cleanInput === validUser ||
         cleanInput === validEmail ||
         cleanInput === "sridhar" ||
-        cleanInput === "katurtusridhar" ||
-        cleanInput === "";
+        cleanInput === "katurtusridhar";
 
       const targetPass = (credentials?.password || "Sridhar@758").trim();
       const isPassMatch =
         cleanPass === targetPass ||
         cleanPass === "Sridhar@758" ||
-        cleanPass.toLowerCase() === targetPass.toLowerCase() ||
-        cleanPass.toLowerCase() === "sridhar@758";
+        cleanPass.toLowerCase() === targetPass.toLowerCase();
 
       if (isUserMatch && isPassMatch) {
         const u: UserProfile = {
@@ -1196,7 +1197,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       return {
         success: false,
-        error: "Incorrect password. Please enter Sridhar@758",
+        error: "Invalid username or password. Please try again.",
       };
     },
     [credentials]
@@ -1211,6 +1212,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         username: email.split("@")[0] || "katurtusridhar",
       };
       setUser(u);
+      try {
+        localStorage.setItem(`${STORAGE_KEY_PREFIX}user`, JSON.stringify(u));
+      } catch {}
       return { success: true };
     },
     []
@@ -1218,6 +1222,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     setUser(null);
+    try {
+      localStorage.removeItem(`${STORAGE_KEY_PREFIX}user`);
+    } catch {}
+    window.location.href = "/login";
   }, []);
 
   return (

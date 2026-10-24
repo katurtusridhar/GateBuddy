@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useApp } from "@/lib/store";
 import { formatDisplayDate, daysBetween } from "@/lib/dateUtils";
 import {
@@ -17,6 +17,7 @@ import {
   Settings,
   RefreshCw,
   Clock,
+  LogOut,
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -26,8 +27,15 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const { user, syncStatus, syncWithCloud, todayDateStr, settings, activeBacklogs } = useApp();
+  const router = useRouter();
+  const { user, isLoaded, logout, syncStatus, syncWithCloud, todayDateStr, settings, activeBacklogs } = useApp();
   const [isSyncingManual, setIsSyncingManual] = useState(false);
+
+  useEffect(() => {
+    if (isLoaded && !user) {
+      router.replace("/login");
+    }
+  }, [isLoaded, user, router]);
 
   const daysToGate = settings.targetExamDate ? daysBetween(todayDateStr, settings.targetExamDate) : 0;
 
@@ -62,6 +70,18 @@ export function AppShell({ children }: AppShellProps) {
     await syncWithCloud();
     setTimeout(() => setIsSyncingManual(false), 500);
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#090D16]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen bg-[#090D16] text-slate-100 font-sans pb-20 lg:pb-0">
@@ -208,9 +228,21 @@ export function AppShell({ children }: AppShellProps) {
               <span className="hidden md:inline">Sync</span>
             </button>
 
-            {/* User Profile Avatar */}
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-sky-400 to-indigo-500 text-xs font-black text-slate-950 shadow-[0_0_12px_rgba(14,165,233,0.3)]">
-              {(user?.name || "S")[0].toUpperCase()}
+            {/* User Profile Avatar & Sign Out */}
+            <div className="flex items-center gap-2">
+              <div
+                title={user?.email || "Signed in"}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-sky-400 to-indigo-500 text-xs font-black text-slate-950 shadow-[0_0_12px_rgba(14,165,233,0.3)]"
+              >
+                {(user?.name || "S")[0].toUpperCase()}
+              </div>
+              <button
+                onClick={logout}
+                title="Sign Out"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#26354F] bg-[#151F32] text-slate-400 hover:border-rose-500/50 hover:text-rose-400 transition"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </header>

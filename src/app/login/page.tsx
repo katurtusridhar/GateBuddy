@@ -4,37 +4,31 @@ import React, { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useApp } from "@/lib/store";
-import { Lock, User, ArrowRight, AlertCircle, ShieldCheck, Eye, EyeOff, Sparkles } from "lucide-react";
+import { Lock, User, ArrowRight, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
   const { login } = useApp();
-  const [username, setUsername] = useState("katurtusridhar");
-  const [password, setPassword] = useState("Sridhar@758");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const performLogin = async (userToUse: string, passToUse: string) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setError("Please enter both username and password.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
-    const res = await login(userToUse, passToUse);
+    const res = await login(username.trim(), password.trim());
     if (res.success) {
       window.location.href = "/dashboard";
     } else {
-      setError(res.error || "Login failed.");
+      setError(res.error || "Invalid username or password. Please try again.");
       setIsLoading(false);
     }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await performLogin(username.trim(), password.trim());
-  };
-
-  const handleQuickSignIn = async () => {
-    setUsername("katurtusridhar");
-    setPassword("Sridhar@758");
-    await performLogin("katurtusridhar", "Sridhar@758");
   };
 
   return (
@@ -57,31 +51,17 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-300">
+          <div className="mt-5 flex items-center gap-2 rounded-xl border border-rose-500/50 bg-rose-950/40 p-3 text-xs text-rose-300">
             <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Pre-configured Credentials Banner */}
-        <div className="mt-4 flex items-center justify-between rounded-xl border border-sky-500/30 bg-sky-950/30 p-2.5 text-xs text-sky-300">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-sky-400" />
-            <span>Configured: <strong>katurtusridhar</strong></span>
-          </div>
-          <button
-            type="button"
-            onClick={handleQuickSignIn}
-            className="flex items-center gap-1 rounded-lg bg-sky-500/20 px-2 py-1 text-[11px] font-bold text-sky-300 hover:bg-sky-500/30 transition"
-          >
-            <Sparkles className="h-3 w-3" />
-            <span>1-Click Sign In</span>
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Username or Email</label>
+            <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Username or Email
+            </label>
             <div className="mt-1.5 flex items-center rounded-xl border border-[#26354F] bg-[#151F32] px-3.5 py-2.5 focus-within:border-sky-500 transition">
               <User className="h-4 w-4 text-slate-400" />
               <input
@@ -91,14 +71,16 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
                 className="ml-2.5 w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
-                placeholder="katurtusridhar"
+                placeholder="Enter username or email"
               />
             </div>
           </div>
 
           <div>
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">Password</label>
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Password
+              </label>
               <Link href="/forgot-password" className="text-xs font-medium text-sky-400 hover:underline">
                 Forgot?
               </Link>
@@ -112,12 +94,13 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
                 className="ml-2.5 w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
-                placeholder="Sridhar@758"
+                placeholder="Enter password"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 className="text-slate-400 hover:text-white transition"
+                aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>

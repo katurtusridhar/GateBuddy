@@ -4,10 +4,10 @@ import React, { useState } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useApp } from "@/lib/store";
 import { CyberCard } from "@/components/ui/CyberCard";
-import { Save, RefreshCw, CheckCircle2, Shield, KeyRound, AlertTriangle, X } from "lucide-react";
+import { Save, RefreshCw, CheckCircle2, Shield, KeyRound, AlertTriangle, X, LogOut } from "lucide-react";
 
 export default function SettingsPage() {
-  const { settings, updateSettings, credentials, changeCredentials, syncStatus, syncWithCloud } = useApp();
+  const { settings, updateSettings, credentials, changeCredentials, syncStatus, syncWithCloud, logout } = useApp();
 
   const [examName, setExamName] = useState(settings.targetExamName);
   const [examDate, setExamDate] = useState(settings.targetExamDate || "2028-02-12");
@@ -202,6 +202,25 @@ export default function SettingsPage() {
                   <span>Sync Now</span>
                 </button>
               </div>
+            </div>
+          </CyberCard>
+
+          {/* Account Session & Sign Out */}
+          <CyberCard glow="rose">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white">Active Session</h3>
+                <p className="text-xs text-slate-400">Signed in as {credentials.username}</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={logout}
+                className="flex items-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-950/30 px-4 py-2 text-xs font-bold text-rose-300 hover:bg-rose-900/40 transition"
+              >
+                <LogOut className="h-3.5 w-3.5 text-rose-400" />
+                <span>Sign Out</span>
+              </button>
             </div>
           </CyberCard>
 
