@@ -22,14 +22,17 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
 
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own profile" ON public.user_profiles;
 CREATE POLICY "Users can view their own profile"
     ON public.user_profiles FOR SELECT
     USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.user_profiles;
 CREATE POLICY "Users can update their own profile"
     ON public.user_profiles FOR UPDATE
     USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.user_profiles;
 CREATE POLICY "Users can insert their own profile"
     ON public.user_profiles FOR INSERT
     WITH CHECK (auth.uid() = id);
@@ -58,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_schedule_tasks_subject ON public.schedule_tasks(s
 
 ALTER TABLE public.schedule_tasks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Everyone can read canonical schedule tasks" ON public.schedule_tasks;
 CREATE POLICY "Everyone can read canonical schedule tasks"
     ON public.schedule_tasks FOR SELECT
     TO authenticated, anon
@@ -81,18 +85,22 @@ CREATE INDEX IF NOT EXISTS idx_task_progress_user_date ON public.task_progress(u
 
 ALTER TABLE public.task_progress ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own task progress" ON public.task_progress;
 CREATE POLICY "Users can read own task progress"
     ON public.task_progress FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own task progress" ON public.task_progress;
 CREATE POLICY "Users can insert own task progress"
     ON public.task_progress FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own task progress" ON public.task_progress;
 CREATE POLICY "Users can update own task progress"
     ON public.task_progress FOR UPDATE
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own task progress" ON public.task_progress;
 CREATE POLICY "Users can delete own task progress"
     ON public.task_progress FOR DELETE
     USING (auth.uid() = user_id);
@@ -118,18 +126,22 @@ CREATE INDEX IF NOT EXISTS idx_recovery_user_date ON public.recovery_assignments
 
 ALTER TABLE public.recovery_assignments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own recoveries" ON public.recovery_assignments;
 CREATE POLICY "Users can read own recoveries"
     ON public.recovery_assignments FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own recoveries" ON public.recovery_assignments;
 CREATE POLICY "Users can insert own recoveries"
     ON public.recovery_assignments FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own recoveries" ON public.recovery_assignments;
 CREATE POLICY "Users can update own recoveries"
     ON public.recovery_assignments FOR UPDATE
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own recoveries" ON public.recovery_assignments;
 CREATE POLICY "Users can delete own recoveries"
     ON public.recovery_assignments FOR DELETE
     USING (auth.uid() = user_id);
@@ -157,18 +169,22 @@ CREATE INDEX IF NOT EXISTS idx_assessment_user_date ON public.assessment_results
 
 ALTER TABLE public.assessment_results ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own assessments" ON public.assessment_results;
 CREATE POLICY "Users can read own assessments"
     ON public.assessment_results FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own assessments" ON public.assessment_results;
 CREATE POLICY "Users can insert own assessments"
     ON public.assessment_results FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own assessments" ON public.assessment_results;
 CREATE POLICY "Users can update own assessments"
     ON public.assessment_results FOR UPDATE
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own assessments" ON public.assessment_results;
 CREATE POLICY "Users can delete own assessments"
     ON public.assessment_results FOR DELETE
     USING (auth.uid() = user_id);
@@ -190,18 +206,22 @@ CREATE TABLE IF NOT EXISTS public.custom_tasks (
 
 ALTER TABLE public.custom_tasks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own custom tasks" ON public.custom_tasks;
 CREATE POLICY "Users can read own custom tasks"
     ON public.custom_tasks FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own custom tasks" ON public.custom_tasks;
 CREATE POLICY "Users can insert own custom tasks"
     ON public.custom_tasks FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own custom tasks" ON public.custom_tasks;
 CREATE POLICY "Users can update own custom tasks"
     ON public.custom_tasks FOR UPDATE
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own custom tasks" ON public.custom_tasks;
 CREATE POLICY "Users can delete own custom tasks"
     ON public.custom_tasks FOR DELETE
     USING (auth.uid() = user_id);
@@ -217,10 +237,12 @@ CREATE TABLE IF NOT EXISTS public.user_achievements (
 
 ALTER TABLE public.user_achievements ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own achievements" ON public.user_achievements;
 CREATE POLICY "Users can read own achievements"
     ON public.user_achievements FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can upsert own achievements" ON public.user_achievements;
 CREATE POLICY "Users can upsert own achievements"
     ON public.user_achievements FOR ALL
     USING (auth.uid() = user_id);
@@ -242,17 +264,33 @@ CREATE INDEX IF NOT EXISTS idx_sync_user_ts ON public.sync_operations(user_id, s
 
 ALTER TABLE public.sync_operations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own sync operations" ON public.sync_operations;
 CREATE POLICY "Users can read own sync operations"
     ON public.sync_operations FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own sync operations" ON public.sync_operations;
 CREATE POLICY "Users can insert own sync operations"
     ON public.sync_operations FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
--- 9. REALTIME PUBLICATION SETUP
--- Enable Realtime for clients to receive instant push updates
-ALTER PUBLICATION supabase_realtime ADD TABLE public.task_progress;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.recovery_assignments;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.assessment_results;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.user_profiles;
+-- 9. REALTIME PUBLICATION SETUP (Safely add if not already added)
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.task_progress;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.recovery_assignments;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.assessment_results;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.user_profiles;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+END $$;
