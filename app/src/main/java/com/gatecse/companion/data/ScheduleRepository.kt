@@ -938,6 +938,40 @@ class ScheduleRepository(
                     notes = notes
                 )
             )
+
+            // Mirror completion to matching schedule_tasks row (e.g. TASK_0013, TASK_0014)
+            if (cleanTaskId.startsWith("SUNDAY_TEST_")) {
+                val matchingTests = dao.getTasksForDate(dateStr).filter { it.type == "SUNDAY_TEST" || (it.isSundayActivity && it.slot == 1) }
+                for (st in matchingTests) {
+                    com.gatecse.companion.sync.SyncRepository.registerLocalMutation(st.id)
+                    dao.insertOrUpdateProgress(
+                        TaskProgressEntity(
+                            taskId = st.id,
+                            originalDate = dateStr,
+                            isCompleted = isCompleted,
+                            completedAtTimestamp = if (isCompleted) System.currentTimeMillis() else null,
+                            completionType = if (isCompleted) "ON_TIME" else null,
+                            notes = notes
+                        )
+                    )
+                }
+            } else if (cleanTaskId.startsWith("BOOSTER_PS_")) {
+                val matchingPyqs = dao.getTasksForDate(dateStr).filter { it.type == "SUNDAY_PYQ" || (it.isSundayActivity && it.slot == 2) }
+                for (st in matchingPyqs) {
+                    com.gatecse.companion.sync.SyncRepository.registerLocalMutation(st.id)
+                    dao.insertOrUpdateProgress(
+                        TaskProgressEntity(
+                            taskId = st.id,
+                            originalDate = dateStr,
+                            isCompleted = isCompleted,
+                            completedAtTimestamp = if (isCompleted) System.currentTimeMillis() else null,
+                            completionType = if (isCompleted) "ON_TIME" else null,
+                            notes = notes
+                        )
+                    )
+                }
+            }
+
             kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
                 try { syncRepository.performBidirectionalSync() } catch (_: Exception) {}
             }
@@ -1199,6 +1233,36 @@ class ScheduleRepository(
     fun getAllAssessmentsFlow(): Flow<List<AssessmentResultEntity>> = dao.getAllAssessmentsFlow()
     suspend fun recordAssessment(assessment: AssessmentResultEntity) = withContext(Dispatchers.IO) {
         dao.insertAssessment(assessment)
+
+        // Automatically mark the Sunday test task complete for this date
+        val testId = "SUNDAY_TEST_${assessment.testDate}"
+        val notes = "[${assessment.subjectName}] Marks: ${assessment.marksObtained}/${assessment.maxMarks}"
+        com.gatecse.companion.sync.SyncRepository.registerLocalMutation(testId)
+        dao.insertOrUpdateProgress(
+            TaskProgressEntity(
+                taskId = testId,
+                originalDate = assessment.testDate,
+                isCompleted = true,
+                completedAtTimestamp = System.currentTimeMillis(),
+                completionType = "ON_TIME",
+                notes = notes
+            )
+        )
+        val matchingTests = dao.getTasksForDate(assessment.testDate).filter { it.type == "SUNDAY_TEST" || (it.isSundayActivity && it.slot == 1) }
+        for (st in matchingTests) {
+            com.gatecse.companion.sync.SyncRepository.registerLocalMutation(st.id)
+            dao.insertOrUpdateProgress(
+                TaskProgressEntity(
+                    taskId = st.id,
+                    originalDate = assessment.testDate,
+                    isCompleted = true,
+                    completedAtTimestamp = System.currentTimeMillis(),
+                    completionType = "ON_TIME",
+                    notes = notes
+                )
+            )
+        }
+
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
             try { syncRepository.performBidirectionalSync() } catch (_: Exception) {}
         }

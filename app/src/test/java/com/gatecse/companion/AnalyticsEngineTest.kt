@@ -1,6 +1,7 @@
 package com.gatecse.companion
 
 import com.gatecse.companion.analytics.AnalyticsEngine
+import com.gatecse.companion.model.AssessmentResultEntity
 import com.gatecse.companion.model.PreparationHealth
 import com.gatecse.companion.model.ScheduleTaskEntity
 import com.gatecse.companion.model.SubjectRegistry
@@ -368,5 +369,87 @@ class AnalyticsEngineTest {
         // 7 days * 10 pts = 70 pts total -> averageDailyPoints = 10.0
         assertEquals(10.0, metrics.averageDailyPoints, 0.01)
         assertTrue(metrics.healthReason.contains("7-day average"))
+    }
+
+    @Test
+    fun testSundayAssessmentAndSyntheticTaskIdScoring() {
+        val sundayDateStr = "2026-10-25"
+        val sundayTasks = listOf(
+            ScheduleTaskEntity(
+                id = "TASK_0013",
+                date = sundayDateStr,
+                dayOfWeek = "Sun",
+                slot = 1,
+                subject = "Weekly Test & Active Recall",
+                type = "SUNDAY_TEST",
+                curNum = 0,
+                totalCount = 0,
+                title = "SUNDAY TEST & REVISION",
+                details = "",
+                milestone = "",
+                sourcePage = 1,
+                isBuffer = false,
+                isRevision = true,
+                isSundayActivity = true
+            ),
+            ScheduleTaskEntity(
+                id = "TASK_0014",
+                date = sundayDateStr,
+                dayOfWeek = "Sun",
+                slot = 2,
+                subject = "PYQ Practice & Mistake Analysis",
+                type = "SUNDAY_PYQ",
+                curNum = 0,
+                totalCount = 0,
+                title = "SUNDAY PYQ PRACTICE",
+                details = "",
+                milestone = "",
+                sourcePage = 1,
+                isBuffer = false,
+                isRevision = false,
+                isSundayActivity = true
+            )
+        )
+
+        // User enters marks: 40/50 (80%)
+        val assessment = AssessmentResultEntity(
+            testDate = sundayDateStr,
+            testName = "Sunday Assessment (DL)",
+            subjectName = "Digital Logic",
+            marksObtained = 40.0,
+            maxMarks = 50.0,
+            percentage = 80.0
+        )
+
+        // Progress stored under UI task IDs
+        val progressMap = mapOf(
+            "SUNDAY_TEST_$sundayDateStr" to TaskProgressEntity("SUNDAY_TEST_$sundayDateStr", sundayDateStr, true, notes = "[DL] Marks: 40.0/50.0"),
+            "BOOSTER_REV_$sundayDateStr" to TaskProgressEntity("BOOSTER_REV_$sundayDateStr", sundayDateStr, true),
+            "BOOSTER_PS_$sundayDateStr" to TaskProgressEntity("BOOSTER_PS_$sundayDateStr", sundayDateStr, true)
+        )
+
+        val score = AnalyticsEngine.calculateDailyScore(
+            targetDateStr = sundayDateStr,
+            currentDateStr = sundayDateStr,
+            dayTasks = sundayTasks,
+            progressMap = progressMap,
+            assessments = listOf(assessment)
+        )
+
+        // 80% of 20 = 16 pts + 5 (Rev) + 5 (PS) = 26 pts total!
+        assertEquals("Sunday 80% test score (16 pts) + Rev (5 pts) + PYQ (5 pts) must equal 26 pts", 26, score.dailyPoints)
+        assertEquals("Completed tasks should be 3 of 3", 3, score.completedScheduledTasks)
+
+        // Verify calculateAdherenceAndForecast also yields exact same 26 points and 0 backlog
+        val metrics = AnalyticsEngine.calculateAdherenceAndForecast(
+            currentDateStr = sundayDateStr,
+            allTasks = sundayTasks,
+            allProgress = progressMap.values.toList(),
+            activeRecoveries = emptyList(),
+            allAssessments = listOf(assessment)
+        )
+
+        assertEquals("Adherence daily points today must be 26", 26, metrics.dailyPointsToday)
+        assertEquals("Completed Sunday test must not be counted as backlog", 0, metrics.currentBacklog)
     }
 }

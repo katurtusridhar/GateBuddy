@@ -870,9 +870,8 @@ fun TodayScreen(
                                 )
                             )
                             val sundayTestTask = todayTasks.firstOrNull { it.type == TaskType.SUNDAY_TEST }
-                            if (sundayTestTask != null) {
-                                repository.markTaskComplete(sundayTestTask.id, true, todayDateStr, "[$cleanCode] Marks: $score/$max")
-                            }
+                            val testTaskId = sundayTestTask?.id ?: "SUNDAY_TEST_$todayDateStr"
+                            repository.markTaskComplete(testTaskId, true, todayDateStr, "[$cleanCode] Marks: $score/$max")
                             showEnterTestMarksDialog = false
                             refreshData()
                             Toast.makeText(context, "Test score & mistakes recorded for $cleanCode!", Toast.LENGTH_SHORT).show()

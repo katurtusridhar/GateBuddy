@@ -34,47 +34,76 @@ object AnalyticsEngine {
         val today = LocalDate.parse(currentDateStr, dateFormatter)
         val isToday = targetDate == today
         val isPast = targetDate.isBefore(today)
+        val isSunday = targetDate.dayOfWeek.name == "SUNDAY"
 
         var points = 0
         var completedLectures = 0
         var totalLectures = 0
 
-        // Scheduled tasks points
-        for (task in dayTasks) {
-            val isComplete = progressMap[task.id]?.isCompleted == true
-            if (task.isSundayActivity) {
-                if (isComplete) {
-                    if (task.type == "SUNDAY_TEST") {
-                        val assessment = assessments.firstOrNull { it.testDate == targetDateStr }
-                        val testPercentage = assessment?.percentage ?: run {
-                            val notes = progressMap[task.id]?.notes.orEmpty()
-                            val match = Regex("""Marks:\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)""").find(notes)
-                            if (match != null) {
-                                val scored = match.groupValues[1].toDoubleOrNull() ?: 0.0
-                                val maxM = match.groupValues[2].toDoubleOrNull() ?: 50.0
-                                if (maxM > 0) (scored / maxM) * 100.0 else 100.0
-                            } else {
-                                100.0
-                            }
-                        }
-                        points += ((testPercentage / 100.0) * 20.0).roundToInt().coerceIn(0, 20)
-                    } else if (task.type == "SUNDAY_PYQ" || task.type == "BOOSTER_PROBLEM_SOLVING") {
-                        points += 5
-                    } else if (task.type == "BOOSTER_REVISION" || task.isRevision) {
-                        points += 5
+        if (isSunday || dayTasks.any { it.isSundayActivity }) {
+            // --- SUNDAY POINT SYSTEM (+30 max: Test max +20, Rev +5, PYQ +5) ---
+            val scheduledTest = dayTasks.firstOrNull { it.type == "SUNDAY_TEST" || (it.isSundayActivity && it.slot == 1) }
+            val testProg = progressMap["SUNDAY_TEST_$targetDateStr"]
+                ?: scheduledTest?.let { progressMap[it.id] }
+                ?: progressMap.values.firstOrNull { it.originalDate == targetDateStr && it.taskId.startsWith("SUNDAY_TEST") }
+            val assessment = assessments.firstOrNull { it.testDate == targetDateStr }
+            val isTestComplete = testProg?.isCompleted == true || assessment != null
+
+            if (isTestComplete) {
+                val testPercentage = assessment?.percentage ?: run {
+                    val notes = testProg?.notes.orEmpty()
+                    val match = Regex("""Marks:\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)""").find(notes)
+                    if (match != null) {
+                        val scored = match.groupValues[1].toDoubleOrNull() ?: 0.0
+                        val maxM = match.groupValues[2].toDoubleOrNull() ?: 50.0
+                        if (maxM > 0) (scored / maxM) * 100.0 else 100.0
                     } else {
-                        points += 10
-                    }
-                } else if (isPast) {
-                    // Negative points penalty for missed Sunday tasks
-                    if (task.type == "SUNDAY_TEST") {
-                        points -= 4 // -4 pts penalty for missed Sunday test (20% of 20 max pts)
-                    } else {
-                        points -= 1 // -1 pt penalty for missed Sunday booster
+                        100.0
                     }
                 }
-            } else {
+                points += ((testPercentage / 100.0) * 20.0).roundToInt().coerceIn(0, 20)
+            } else if (isPast && (scheduledTest != null || isSunday)) {
+                points -= 4 // -4 pts penalty for missed Sunday test
+            }
+
+            // Sunday Revision (+5 pts)
+            val revProg = progressMap["BOOSTER_REV_$targetDateStr"]
+                ?: dayTasks.firstOrNull { it.isRevision }?.let { progressMap[it.id] }
+            val isRevComplete = revProg?.isCompleted == true
+            if (isRevComplete) {
+                points += 5
+            } else if (isPast && dayTasks.any { it.isRevision }) {
+                points -= 1 // -1 pt penalty for missed scheduled revision
+            }
+
+            // Sunday PYQ Practice (+5 pts)
+            val scheduledPyq = dayTasks.firstOrNull { it.type == "SUNDAY_PYQ" || (it.isSundayActivity && it.slot == 2) }
+            val pyqProg = progressMap["BOOSTER_PS_$targetDateStr"]
+                ?: scheduledPyq?.let { progressMap[it.id] }
+            val isPyqComplete = pyqProg?.isCompleted == true
+            if (isPyqComplete) {
+                points += 5
+            } else if (isPast && (scheduledPyq != null || (isSunday && dayTasks.size >= 2))) {
+                points -= 1 // -1 pt penalty for missed Sunday PYQ
+            }
+
+            // Non-Sunday catch-up or recovery tasks scheduled for Sunday
+            val nonSundayTasks = dayTasks.filter { !it.isSundayActivity && it.type != "SUNDAY_TEST" && it.type != "SUNDAY_PYQ" }
+            for (task in nonSundayTasks) {
                 totalLectures++
+                val isComplete = progressMap[task.id]?.isCompleted == true
+                if (isComplete) {
+                    completedLectures++
+                    points += 10
+                } else if (isPast) {
+                    points -= 2
+                }
+            }
+        } else {
+            // --- WEEKDAY POINT SYSTEM (Lectures +10 each, Booster Rev +5, Booster PS +5) ---
+            for (task in dayTasks) {
+                totalLectures++
+                val isComplete = progressMap[task.id]?.isCompleted == true
                 if (isComplete) {
                     completedLectures++
                     points += 10
@@ -82,21 +111,41 @@ object AnalyticsEngine {
                     points -= 2 // Missed lecture penalty on past days
                 }
             }
-        }
 
-        // Booster tasks (Revision and Problem Solving)
-        val revKey = "BOOSTER_REV_$targetDateStr"
-        val psKey = "BOOSTER_PS_$targetDateStr"
-        if (progressMap[revKey]?.isCompleted == true) points += 5
-        if (progressMap[psKey]?.isCompleted == true) points += 5
+            // Weekday Booster tasks (Revision and Problem Solving)
+            val revKey = "BOOSTER_REV_$targetDateStr"
+            val psKey = "BOOSTER_PS_$targetDateStr"
+            if (progressMap[revKey]?.isCompleted == true) points += 5
+            if (progressMap[psKey]?.isCompleted == true) points += 5
+        }
 
         // Custom tasks
         for (ct in customTasks) {
             if (ct.isCompleted) points += ct.pointsValue
         }
 
-        val totalScheduled = dayTasks.size
-        val completedCount = dayTasks.count { progressMap[it.id]?.isCompleted == true }
+        // Total scheduled tasks count and completed count for execution score
+        val (totalScheduled, completedCount) = if (isSunday || dayTasks.any { it.isSundayActivity }) {
+            val nonSundayCount = dayTasks.count { !it.isSundayActivity && it.type != "SUNDAY_TEST" && it.type != "SUNDAY_PYQ" }
+            val total = 3 + nonSundayCount + customTasks.size
+            val scheduledTest = dayTasks.firstOrNull { it.type == "SUNDAY_TEST" || (it.isSundayActivity && it.slot == 1) }
+            val testDone = progressMap["SUNDAY_TEST_$targetDateStr"]?.isCompleted == true 
+                || scheduledTest?.let { progressMap[it.id]?.isCompleted == true } == true 
+                || assessments.any { it.testDate == targetDateStr }
+            val revDone = progressMap["BOOSTER_REV_$targetDateStr"]?.isCompleted == true
+            val scheduledPyq = dayTasks.firstOrNull { it.type == "SUNDAY_PYQ" || (it.isSundayActivity && it.slot == 2) }
+            val pyqDone = progressMap["BOOSTER_PS_$targetDateStr"]?.isCompleted == true 
+                || scheduledPyq?.let { progressMap[it.id]?.isCompleted == true } == true
+            val nonSundayDone = dayTasks.count { !it.isSundayActivity && it.type != "SUNDAY_TEST" && it.type != "SUNDAY_PYQ" && progressMap[it.id]?.isCompleted == true }
+            val customDone = customTasks.count { it.isCompleted }
+            val completed = (if (testDone) 1 else 0) + (if (revDone) 1 else 0) + (if (pyqDone) 1 else 0) + nonSundayDone + customDone
+            Pair(total, completed)
+        } else {
+            val total = dayTasks.size + customTasks.size
+            val completed = dayTasks.count { progressMap[it.id]?.isCompleted == true } + customTasks.count { it.isCompleted }
+            Pair(total, completed)
+        }
+
         val scorePercent = if (totalScheduled > 0) {
             ((completedCount.toDouble() / totalScheduled.toDouble()) * 100).toInt()
         } else {
@@ -153,9 +202,26 @@ object AnalyticsEngine {
         var currentBacklog = 0
 
         for (task in tasksUpToToday) {
-            val progress = progressMap[task.id]
-            if (progress?.isCompleted == true) {
-                when (progress.completionType) {
+            val isSundayTest = task.type == "SUNDAY_TEST"
+            val isSundayPyq = task.type == "SUNDAY_PYQ"
+            val isDone = when {
+                isSundayTest -> {
+                    progressMap[task.id]?.isCompleted == true 
+                        || progressMap["SUNDAY_TEST_${task.date}"]?.isCompleted == true 
+                        || assessmentsByDate.containsKey(task.date)
+                }
+                isSundayPyq -> {
+                    progressMap[task.id]?.isCompleted == true 
+                        || progressMap["BOOSTER_PS_${task.date}"]?.isCompleted == true
+                }
+                else -> progressMap[task.id]?.isCompleted == true
+            }
+
+            if (isDone) {
+                val completionType = progressMap[task.id]?.completionType 
+                    ?: progressMap["SUNDAY_TEST_${task.date}"]?.completionType
+                    ?: "ON_TIME"
+                when (completionType) {
                     "ON_TIME" -> completedOnTime++
                     "LATE" -> completedLate++
                     "RECOVERY", "RECOVERY_LATE" -> {
@@ -187,7 +253,8 @@ object AnalyticsEngine {
         }
         val last7DaysOnTime = last7DaysTasks.count {
             val p = progressMap[it.id]
-            p?.isCompleted == true && p.completionType == "ON_TIME"
+            (p?.isCompleted == true && p.completionType == "ON_TIME")
+                || (it.type == "SUNDAY_TEST" && (progressMap["SUNDAY_TEST_${it.date}"]?.isCompleted == true || assessmentsByDate.containsKey(it.date)))
         }
         val sevenDayAdherencePercent = if (last7DaysTasks.isNotEmpty()) {
             ((last7DaysOnTime.toDouble() / last7DaysTasks.size.toDouble()) * 100).toInt()
@@ -202,7 +269,8 @@ object AnalyticsEngine {
         }
         val last28DaysOnTime = last28DaysTasks.count {
             val p = progressMap[it.id]
-            p?.isCompleted == true && p.completionType == "ON_TIME"
+            (p?.isCompleted == true && p.completionType == "ON_TIME")
+                || (it.type == "SUNDAY_TEST" && (progressMap["SUNDAY_TEST_${it.date}"]?.isCompleted == true || assessmentsByDate.containsKey(it.date)))
         }
         val twentyEightDayAdherencePercent = if (last28DaysTasks.isNotEmpty()) {
             ((last28DaysOnTime.toDouble() / last28DaysTasks.size.toDouble()) * 100).toInt()
@@ -220,62 +288,18 @@ object AnalyticsEngine {
 
         for (date in allDates) {
             val dStr = date.format(dateFormatter)
-            val dTasks = tasksByDate[dStr].orEmpty()
-            val dCustom = customByDate[dStr].orEmpty()
-
-            var dayPoints = 0
-            for (t in dTasks) {
-                val done = progressMap[t.id]?.isCompleted == true
-                if (t.isSundayActivity) {
-                    if (done) {
-                        if (t.type == "SUNDAY_TEST") {
-                            val assessment = assessmentsByDate[dStr]
-                            val testPercentage = assessment?.percentage ?: run {
-                                val notes = progressMap[t.id]?.notes.orEmpty()
-                                val match = Regex("""Marks:\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)""").find(notes)
-                                if (match != null) {
-                                    val scored = match.groupValues[1].toDoubleOrNull() ?: 0.0
-                                    val maxM = match.groupValues[2].toDoubleOrNull() ?: 50.0
-                                    if (maxM > 0) (scored / maxM) * 100.0 else 100.0
-                                } else {
-                                    100.0
-                                }
-                            }
-                            dayPoints += ((testPercentage / 100.0) * 20.0).roundToInt().coerceIn(0, 20)
-                        } else if (t.type == "SUNDAY_PYQ" || t.type == "BOOSTER_PROBLEM_SOLVING") {
-                            dayPoints += 5
-                        } else if (t.type == "BOOSTER_REVISION" || t.isRevision) {
-                            dayPoints += 5
-                        } else {
-                            dayPoints += 10
-                        }
-                    } else if (date.isBefore(today)) {
-                        if (t.type == "SUNDAY_TEST") dayPoints -= 4
-                        else dayPoints -= 1
-                    }
-                } else {
-                    if (done) {
-                        dayPoints += 10
-                    } else if (date.isBefore(today)) {
-                        dayPoints -= 2 // -2 missed lecture penalty
-                    }
-                }
-            }
-
-            // Booster tasks
-            if (progressMap["BOOSTER_REV_$dStr"]?.isCompleted == true) dayPoints += 5
-            if (progressMap["BOOSTER_PS_$dStr"]?.isCompleted == true) dayPoints += 5
-
-            // Custom tasks
-            for (c in dCustom) {
-                if (c.isCompleted) dayPoints += c.pointsValue
-            }
-
-            val finalDayPoints = dayPoints.coerceAtLeast(0)
-            totalPointsAllTime += finalDayPoints
+            val score = calculateDailyScore(
+                targetDateStr = dStr,
+                currentDateStr = currentDateStr,
+                dayTasks = tasksByDate[dStr].orEmpty(),
+                progressMap = progressMap,
+                customTasks = customByDate[dStr].orEmpty(),
+                assessments = allAssessments
+            )
+            totalPointsAllTime += score.dailyPoints
 
             if (date == today) {
-                pointsToday = finalDayPoints
+                pointsToday = score.dailyPoints
             }
         }
 
@@ -284,55 +308,15 @@ object AnalyticsEngine {
         var sum7DaysPoints = 0
         for (d in sevenDaysList) {
             val dStr = d.format(dateFormatter)
-            val dTasks = tasksByDate[dStr].orEmpty()
-            val dCustom = customByDate[dStr].orEmpty()
-
-            var dPts = 0
-            for (t in dTasks) {
-                val done = progressMap[t.id]?.isCompleted == true
-                if (t.isSundayActivity) {
-                    if (done) {
-                        if (t.type == "SUNDAY_TEST") {
-                            val assessment = assessmentsByDate[dStr]
-                            val testPercentage = assessment?.percentage ?: run {
-                                val notes = progressMap[t.id]?.notes.orEmpty()
-                                val match = Regex("""Marks:\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)""").find(notes)
-                                if (match != null) {
-                                    val scored = match.groupValues[1].toDoubleOrNull() ?: 0.0
-                                    val maxM = match.groupValues[2].toDoubleOrNull() ?: 50.0
-                                    if (maxM > 0) (scored / maxM) * 100.0 else 100.0
-                                } else {
-                                    100.0
-                                }
-                            }
-                            dPts += ((testPercentage / 100.0) * 20.0).roundToInt().coerceIn(0, 20)
-                        } else if (t.type == "SUNDAY_PYQ" || t.type == "BOOSTER_PROBLEM_SOLVING") {
-                            dPts += 5
-                        } else if (t.type == "BOOSTER_REVISION" || t.isRevision) {
-                            dPts += 5
-                        } else {
-                            dPts += 10
-                        }
-                    } else if (d.isBefore(today)) {
-                        if (t.type == "SUNDAY_TEST") dPts -= 4
-                        else dPts -= 1
-                    }
-                } else {
-                    if (done) {
-                        dPts += 10
-                    } else if (d.isBefore(today)) {
-                        dPts -= 2
-                    }
-                }
-            }
-
-            if (progressMap["BOOSTER_REV_$dStr"]?.isCompleted == true) dPts += 5
-            if (progressMap["BOOSTER_PS_$dStr"]?.isCompleted == true) dPts += 5
-            for (c in dCustom) {
-                if (c.isCompleted) dPts += c.pointsValue
-            }
-
-            sum7DaysPoints += dPts.coerceAtLeast(0)
+            val score = calculateDailyScore(
+                targetDateStr = dStr,
+                currentDateStr = currentDateStr,
+                dayTasks = tasksByDate[dStr].orEmpty(),
+                progressMap = progressMap,
+                customTasks = customByDate[dStr].orEmpty(),
+                assessments = allAssessments
+            )
+            sum7DaysPoints += score.dailyPoints
         }
 
         val averageDailyPoints = sum7DaysPoints.toDouble() / 7.0
@@ -342,60 +326,21 @@ object AnalyticsEngine {
         for (i in 13 downTo 0) {
             val checkDate = today.minusDays(i.toLong())
             val cStr = checkDate.format(dateFormatter)
-            val dTasks = tasksByDate[cStr].orEmpty()
-            val dCustom = customByDate[cStr].orEmpty()
-            val isSun = checkDate.dayOfWeek.name == "SUNDAY"
-
-            var dPts = 0
-            for (t in dTasks) {
-                val done = progressMap[t.id]?.isCompleted == true
-                if (t.isSundayActivity) {
-                    if (done) {
-                        if (t.type == "SUNDAY_TEST") {
-                            val assessment = assessmentsByDate[cStr]
-                            val testPercentage = assessment?.percentage ?: run {
-                                val notes = progressMap[t.id]?.notes.orEmpty()
-                                val match = Regex("""Marks:\s*(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)""").find(notes)
-                                if (match != null) {
-                                    val scored = match.groupValues[1].toDoubleOrNull() ?: 0.0
-                                    val maxM = match.groupValues[2].toDoubleOrNull() ?: 50.0
-                                    if (maxM > 0) (scored / maxM) * 100.0 else 100.0
-                                } else {
-                                    100.0
-                                }
-                            }
-                            dPts += ((testPercentage / 100.0) * 20.0).roundToInt().coerceIn(0, 20)
-                        } else if (t.type == "SUNDAY_PYQ" || t.type == "BOOSTER_PROBLEM_SOLVING") {
-                            dPts += 5
-                        } else if (t.type == "BOOSTER_REVISION" || t.isRevision) {
-                            dPts += 5
-                        } else {
-                            dPts += 10
-                        }
-                    } else if (checkDate.isBefore(today)) {
-                        if (t.type == "SUNDAY_TEST") dPts -= 4
-                        else dPts -= 1
-                    }
-                } else {
-                    if (done) {
-                        dPts += 10
-                    } else if (checkDate.isBefore(today)) {
-                        dPts -= 2
-                    }
-                }
-            }
-            if (progressMap["BOOSTER_REV_$cStr"]?.isCompleted == true) dPts += 5
-            if (progressMap["BOOSTER_PS_$cStr"]?.isCompleted == true) dPts += 5
-            for (c in dCustom) {
-                if (c.isCompleted) dPts += c.pointsValue
-            }
-
+            val score = calculateDailyScore(
+                targetDateStr = cStr,
+                currentDateStr = currentDateStr,
+                dayTasks = tasksByDate[cStr].orEmpty(),
+                progressMap = progressMap,
+                customTasks = customByDate[cStr].orEmpty(),
+                assessments = allAssessments
+            )
             val dayLabel = checkDate.dayOfWeek.name.take(3)
+            val isSun = checkDate.dayOfWeek.name == "SUNDAY"
             recentScores.add(
                 DayScorePoint(
                     date = cStr,
                     dayLabel = dayLabel,
-                    points = dPts.coerceAtLeast(0),
+                    points = score.dailyPoints.coerceAtLeast(0),
                     targetPoints = 30,
                     isSunday = isSun
                 )
