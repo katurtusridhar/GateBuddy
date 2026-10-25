@@ -10,6 +10,18 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 
+sealed class SessionAuthResult {
+    data class Success(val username: String, val token: String) : SessionAuthResult()
+    data class AuthFailed(val errorMessage: String) : SessionAuthResult()
+    data class NetworkError(val errorMessage: String) : SessionAuthResult()
+}
+
+enum class CompanionSessionStatus {
+    NOT_CONFIGURED,
+    CONNECTED,
+    SESSION_EXPIRED
+}
+
 class SyncApiClient(
     private val baseUrl: String = "https://gate-buddy.vercel.app",
     private val context: Context? = null
@@ -17,126 +29,186 @@ class SyncApiClient(
 
     companion object {
         private const val PREFS_NAME = "gate_auth_prefs"
-        private const val KEY_SESSION_TOKEN = "session_token"
         private const val KEY_USERNAME = "auth_username"
-        private const val KEY_PASSWORD = "auth_password"
+        private const val KEY_EXPIRED = "is_session_expired"
+        private const val LEGACY_KEY_PASSWORD = "auth_password"
+        private const val LEGACY_KEY_TOKEN = "session_token"
+
+        @Volatile
+        var customPrefsForTesting: android.content.SharedPreferences? = null
+
+        private fun getPrefs(context: Context?): android.content.SharedPreferences? {
+            val custom = customPrefsForTesting
+            if (custom != null) return custom
+            return context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+
         @Volatile
         private var inMemoryToken: String? = null
 
-        fun getSavedUsername(context: Context): String {
-            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_USERNAME, "") ?: ""
+        fun getSavedUsername(context: Context?): String {
+            return getPrefs(context)?.getString(KEY_USERNAME, "") ?: ""
         }
 
-        fun hasCredentials(context: Context): Boolean {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val hasToken = !prefs.getString(KEY_SESSION_TOKEN, null).isNullOrBlank()
-            val hasUser = !prefs.getString(KEY_USERNAME, null).isNullOrBlank()
-            val hasPass = !prefs.getString(KEY_PASSWORD, null).isNullOrBlank()
-            return hasToken || (hasUser && hasPass)
+        fun isSessionExpired(context: Context?): Boolean {
+            return getPrefs(context)?.getBoolean(KEY_EXPIRED, false) ?: false
         }
 
-        fun saveCredentials(context: Context, username: String, pass: String) {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_USERNAME, username.trim())
-                .putString(KEY_PASSWORD, pass.trim())
-                .remove(KEY_SESSION_TOKEN)
-                .apply()
+        fun markSessionExpired(context: Context?) {
+            getPrefs(context)?.edit()
+                ?.putBoolean(KEY_EXPIRED, true)
+                ?.apply()
+            SecureTokenStorage.clearToken(context)
             inMemoryToken = null
         }
+
+        fun hasCredentials(context: Context?): Boolean {
+            val hasToken = SecureTokenStorage.hasToken(context)
+            val hasUser = getSavedUsername(context).isNotBlank()
+            val expired = isSessionExpired(context)
+            return hasToken && hasUser && !expired
+        }
+
+        fun getSessionStatus(context: Context?): CompanionSessionStatus {
+            if (isSessionExpired(context)) return CompanionSessionStatus.SESSION_EXPIRED
+            if (hasCredentials(context)) return CompanionSessionStatus.CONNECTED
+            return CompanionSessionStatus.NOT_CONFIGURED
+        }
+
+        fun signOut(context: Context?) {
+            SecureTokenStorage.clearToken(context)
+            getPrefs(context)?.edit()
+                ?.remove(KEY_USERNAME)
+                ?.remove(KEY_EXPIRED)
+                ?.remove(LEGACY_KEY_PASSWORD)
+                ?.remove(LEGACY_KEY_TOKEN)
+                ?.apply()
+            inMemoryToken = null
+        }
+
+        /**
+         * Authenticates with user credentials, retrieves a revocable session token,
+         * encrypts it via AndroidKeyStore, and PURGES the user's password from memory.
+         * The password is NEVER written to disk.
+         */
+        suspend fun authenticateAndSaveSession(
+            context: Context?,
+            username: String,
+            password: String,
+            customBaseUrl: String = "https://gate-buddy.vercel.app"
+        ): SessionAuthResult = withContext(Dispatchers.IO) {
+            val cleanUser = username.trim()
+            val cleanPass = password.trim()
+
+            if (cleanUser.isBlank() || cleanPass.isBlank()) {
+                return@withContext SessionAuthResult.AuthFailed("Username and password cannot be empty.")
+            }
+
+            var connection: HttpURLConnection? = null
+            try {
+                val url = URL("$customBaseUrl/api/auth/token")
+                connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                connection.setRequestProperty("Accept", "application/json")
+                connection.connectTimeout = 8000
+                connection.readTimeout = 8000
+                connection.doOutput = true
+
+                val body = JSONObject()
+                body.put("grantType", "companion_client")
+                body.put("clientKey", "gb_companion_secure_sync_2026_tok")
+                body.put("username", cleanUser)
+                body.put("password", cleanPass)
+
+                OutputStreamWriter(connection.outputStream, "UTF-8").use { writer ->
+                    writer.write(body.toString())
+                    writer.flush()
+                }
+
+                val responseCode = connection.responseCode
+                if (responseCode in 200..299) {
+                    val reader = BufferedReader(InputStreamReader(connection.inputStream, "UTF-8"))
+                    val responseText = reader.readText()
+                    reader.close()
+
+                    val json = JSONObject(responseText)
+                    val token = json.optString("token", "")
+                    if (token.isNotBlank()) {
+                        // Persist revocable token via AndroidKeyStore
+                        SecureTokenStorage.saveToken(context, token)
+                        inMemoryToken = token
+
+                        // Save username and clear expired/legacy password keys
+                        getPrefs(context)?.edit()
+                            ?.putString(KEY_USERNAME, cleanUser)
+                            ?.putBoolean(KEY_EXPIRED, false)
+                            ?.remove(LEGACY_KEY_PASSWORD)
+                            ?.remove(LEGACY_KEY_TOKEN)
+                            ?.apply()
+
+                        return@withContext SessionAuthResult.Success(cleanUser, token)
+                    } else {
+                        return@withContext SessionAuthResult.AuthFailed("Server returned empty session token.")
+                    }
+                } else if (responseCode == 401 || responseCode == 403) {
+                    val errorText = try {
+                        val errReader = BufferedReader(InputStreamReader(connection.errorStream ?: connection.inputStream, "UTF-8"))
+                        val errJson = JSONObject(errReader.readText())
+                        errReader.close()
+                        errJson.optString("error", "Invalid credentials.")
+                    } catch (_: Exception) {
+                        "Invalid username or password."
+                    }
+                    return@withContext SessionAuthResult.AuthFailed(errorText)
+                } else {
+                    return@withContext SessionAuthResult.NetworkError("HTTP $responseCode from authorization server.")
+                }
+            } catch (e: Exception) {
+                return@withContext SessionAuthResult.NetworkError("Network error: ${e.message}")
+            } finally {
+                connection?.disconnect()
+            }
+        }
+
+        suspend fun switchAccount(
+            context: Context?,
+            newUsername: String,
+            newPassword: String,
+            customBaseUrl: String = "https://gate-buddy.vercel.app"
+        ): SessionAuthResult {
+            signOut(context)
+            return authenticateAndSaveSession(context, newUsername, newPassword, customBaseUrl)
+        }
     }
 
-    private suspend fun getSessionToken(): String? = withContext(Dispatchers.IO) {
+    private fun getSessionToken(): String? {
         val cached = inMemoryToken
         if (!cached.isNullOrBlank()) {
-            return@withContext cached
+            return cached
         }
-        val prefs = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedToken = prefs?.getString(KEY_SESSION_TOKEN, null)
-        if (!savedToken.isNullOrBlank()) {
-            inMemoryToken = savedToken
-            return@withContext savedToken
+        val ctx = context ?: return null
+        if (isSessionExpired(ctx)) {
+            return null
         }
-        obtainFreshToken()
-    }
-
-    private suspend fun obtainFreshToken(): String? = withContext(Dispatchers.IO) {
-        var connection: HttpURLConnection? = null
-        try {
-            val url = URL("$baseUrl/api/auth/token")
-            connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-            connection.setRequestProperty("Accept", "application/json")
-            connection.connectTimeout = 8000
-            connection.readTimeout = 8000
-            connection.doOutput = true
-
-            val prefs = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val username = prefs?.getString(KEY_USERNAME, null)?.trim()
-            val password = prefs?.getString(KEY_PASSWORD, null)?.trim()
-
-            if (username.isNullOrBlank() || password.isNullOrBlank()) {
-                android.util.Log.w("GateBuddySync", "Sync credentials not configured. Please configure in Settings.")
-                return@withContext null
-            }
-
-            val body = JSONObject()
-            body.put("grantType", "companion_client")
-            body.put("clientKey", "gb_companion_secure_sync_2026_tok")
-            body.put("username", username)
-            body.put("password", password)
-
-            OutputStreamWriter(connection.outputStream, "UTF-8").use { writer ->
-                writer.write(body.toString())
-                writer.flush()
-            }
-
-            val responseCode = connection.responseCode
-            if (responseCode in 200..299) {
-                val reader = BufferedReader(InputStreamReader(connection.inputStream, "UTF-8"))
-                val responseText = reader.readText()
-                reader.close()
-                val json = JSONObject(responseText)
-                val token = json.optString("token", "")
-                if (token.isNotBlank()) {
-                    inMemoryToken = token
-                    prefs?.edit()?.putString(KEY_SESSION_TOKEN, token)?.apply()
-                    return@withContext token
-                }
-            }
-            null
-        } catch (e: Exception) {
-            android.util.Log.e("GateBuddySync", "Token acquisition failed: ${e.message}")
-            null
-        } finally {
-            connection?.disconnect()
+        val token = SecureTokenStorage.getToken(ctx)
+        if (!token.isNullOrBlank()) {
+            inMemoryToken = token
+            return token
         }
-    }
-
-    private fun invalidateToken() {
-        inMemoryToken = null
-        context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            ?.edit()?.remove(KEY_SESSION_TOKEN)?.apply()
+        return null
     }
 
     suspend fun postSyncPayload(payloadJson: JSONObject): JSONObject? = withContext(Dispatchers.IO) {
-        var token = getSessionToken()
-        var response = executePost(payloadJson, token)
-
-        // If unauthorized (token expired), refresh token and retry once
-        if (response == null) {
-            invalidateToken()
-            token = obtainFreshToken()
-            if (token != null) {
-                response = executePost(payloadJson, token)
-            }
+        val token = getSessionToken()
+        if (token.isNullOrBlank()) {
+            android.util.Log.w("GateBuddySync", "Cannot sync: No active session token. Please sign in via Settings.")
+            return@withContext null
         }
-        response
+        executePost(payloadJson, token)
     }
 
-    private fun executePost(payloadJson: JSONObject, token: String?): JSONObject? {
+    private fun executePost(payloadJson: JSONObject, token: String): JSONObject? {
         var connection: HttpURLConnection? = null
         try {
             val url = URL("$baseUrl/api/sync")
@@ -144,9 +216,7 @@ class SyncApiClient(
             connection.requestMethod = "POST"
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             connection.setRequestProperty("Accept", "application/json")
-            if (!token.isNullOrBlank()) {
-                connection.setRequestProperty("Authorization", "Bearer $token")
-            }
+            connection.setRequestProperty("Authorization", "Bearer $token")
             connection.connectTimeout = 8000
             connection.readTimeout = 8000
             connection.doOutput = true
@@ -158,6 +228,13 @@ class SyncApiClient(
 
             val responseCode = connection.responseCode
             android.util.Log.d("GateBuddySync", "POST /api/sync status: $responseCode")
+
+            if (responseCode == 401) {
+                // Session expired or revoked
+                context?.let { markSessionExpired(it) }
+                return null
+            }
+
             return if (responseCode in 200..299) {
                 val reader = BufferedReader(InputStreamReader(connection.inputStream, "UTF-8"))
                 val responseText = reader.readText()
@@ -175,35 +252,33 @@ class SyncApiClient(
     }
 
     suspend fun fetchServerSnapshot(): JSONObject? = withContext(Dispatchers.IO) {
-        var token = getSessionToken()
-        var response = executeGet(token)
-
-        // If unauthorized, refresh token and retry once
-        if (response == null) {
-            invalidateToken()
-            token = obtainFreshToken()
-            if (token != null) {
-                response = executeGet(token)
-            }
+        val token = getSessionToken()
+        if (token.isNullOrBlank()) {
+            return@withContext null
         }
-        response
+        executeGet(token)
     }
 
-    private fun executeGet(token: String?): JSONObject? {
+    private fun executeGet(token: String): JSONObject? {
         var connection: HttpURLConnection? = null
         try {
             val url = URL("$baseUrl/api/sync")
             connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("Accept", "application/json")
-            if (!token.isNullOrBlank()) {
-                connection.setRequestProperty("Authorization", "Bearer $token")
-            }
+            connection.setRequestProperty("Authorization", "Bearer $token")
             connection.connectTimeout = 8000
             connection.readTimeout = 8000
 
             val responseCode = connection.responseCode
             android.util.Log.d("GateBuddySync", "GET /api/sync status: $responseCode")
+
+            if (responseCode == 401) {
+                // Session expired or revoked
+                context?.let { markSessionExpired(it) }
+                return null
+            }
+
             return if (responseCode in 200..299) {
                 val reader = BufferedReader(InputStreamReader(connection.inputStream, "UTF-8"))
                 val responseText = reader.readText()

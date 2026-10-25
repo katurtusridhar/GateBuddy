@@ -73,6 +73,8 @@ import com.gatecse.companion.data.ScheduleRepository
 import com.gatecse.companion.model.ThemeMode
 import com.gatecse.companion.model.UserSettingsEntity
 import com.gatecse.companion.sync.SyncApiClient
+import com.gatecse.companion.sync.CompanionSessionStatus
+import com.gatecse.companion.sync.SessionAuthResult
 import com.gatecse.companion.ui.components.CyberCard
 import com.gatecse.companion.ui.components.CyberPillBadge
 import com.gatecse.companion.ui.theme.GateTheme
@@ -103,7 +105,7 @@ fun SettingsScreen(
     var restoreJsonText by remember { mutableStateOf("") }
     var showSyncAccountDialog by remember { mutableStateOf(false) }
     var syncUsernameInput by remember { mutableStateOf(SyncApiClient.getSavedUsername(context)) }
-    var isSyncConfigured by remember { mutableStateOf(SyncApiClient.hasCredentials(context)) }
+    var syncStatus by remember { mutableStateOf(SyncApiClient.getSessionStatus(context)) }
 
     val settings = userSettings ?: UserSettingsEntity()
 
@@ -478,8 +480,16 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     CyberPillBadge(text = "WEBSITE SYNCHRONIZATION", accentColor = colors.sky)
-                    val statusText = if (isSyncConfigured) "CONNECTED" else "NOT CONFIGURED"
-                    val statusColor = if (isSyncConfigured) colors.emerald else colors.amber
+                    val statusText = when (syncStatus) {
+                        CompanionSessionStatus.CONNECTED -> "CONNECTED"
+                        CompanionSessionStatus.SESSION_EXPIRED -> "SESSION EXPIRED"
+                        CompanionSessionStatus.NOT_CONFIGURED -> "NOT CONFIGURED"
+                    }
+                    val statusColor = when (syncStatus) {
+                        CompanionSessionStatus.CONNECTED -> colors.emerald
+                        CompanionSessionStatus.SESSION_EXPIRED -> colors.rose
+                        CompanionSessionStatus.NOT_CONFIGURED -> colors.amber
+                    }
                     CyberPillBadge(text = statusText, accentColor = statusColor)
                 }
                 Spacer(modifier = Modifier.height(6.dp))
@@ -490,8 +500,13 @@ fun SettingsScreen(
                     color = colors.textPrimary
                 )
                 Spacer(modifier = Modifier.height(4.dp))
+                val descriptionText = when (syncStatus) {
+                    CompanionSessionStatus.CONNECTED -> "Account: ${if (syncUsernameInput.isNotBlank()) syncUsernameInput else "Configured"} — Revocable session token protected by Android KeyStore hardware encryption. Passwords are never stored on device."
+                    CompanionSessionStatus.SESSION_EXPIRED -> "Your companion sync session has expired or was revoked. Please re-authenticate to resume synchronization."
+                    CompanionSessionStatus.NOT_CONFIGURED -> "Configure your website username and password to authenticate progress sync. A revocable session token is issued and your password is never persisted."
+                }
                 Text(
-                    text = if (isSyncConfigured) "Account: ${if (syncUsernameInput.isNotBlank()) syncUsernameInput else "Configured"} — Android progress uploads securely to gate-buddy.vercel.app." else "Configure your website username and password to authenticate progress sync.",
+                    text = descriptionText,
                     fontSize = 12.sp,
                     color = colors.textSecondary
                 )
@@ -500,37 +515,76 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
-                        onClick = { showSyncAccountDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.cardElevated),
-                        border = BorderStroke(1.dp, colors.cardBorder),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Person, contentDescription = "Account", modifier = Modifier.size(16.dp), tint = colors.sky)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(if (isSyncConfigured) "Credentials" else "Configure", fontSize = 12.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
-                    }
-
-                    if (isSyncConfigured) {
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    val res = repository.syncWithCloud()
-                                    if (res.success) {
-                                        Toast.makeText(context, "Cloud sync completed successfully!", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Sync attempt: ${res.message}", Toast.LENGTH_LONG).show()
+                    when (syncStatus) {
+                        CompanionSessionStatus.CONNECTED -> {
+                            Button(
+                                onClick = { showSyncAccountDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.cardElevated),
+                                border = BorderStroke(1.dp, colors.cardBorder),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Person, contentDescription = "Account", modifier = Modifier.size(16.dp), tint = colors.sky)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Switch User", fontSize = 12.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = {
+                                    SyncApiClient.signOut(context)
+                                    syncStatus = CompanionSessionStatus.NOT_CONFIGURED
+                                    syncUsernameInput = ""
+                                    Toast.makeText(context, "Signed out from Companion Sync.", Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.cardElevated),
+                                border = BorderStroke(1.dp, colors.rose.copy(alpha = 0.5f)),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Sign Out", fontSize = 12.sp, color = colors.rose, fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        val res = repository.syncWithCloud()
+                                        if (res.success) {
+                                            Toast.makeText(context, "Cloud sync completed successfully!", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Sync attempt: ${res.message}", Toast.LENGTH_LONG).show()
+                                        }
                                     }
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Sync, contentDescription = "Sync Now", modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Sync, contentDescription = "Sync Now", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        CompanionSessionStatus.SESSION_EXPIRED -> {
+                            Button(
+                                onClick = { showSyncAccountDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.rose),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Sync, contentDescription = "Re-authenticate", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Re-authenticate Session", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        CompanionSessionStatus.NOT_CONFIGURED -> {
+                            Button(
+                                onClick = { showSyncAccountDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Person, contentDescription = "Connect Account", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Connect Companion Account", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -673,16 +727,17 @@ fun SettingsScreen(
         var userDialogText by remember { mutableStateOf(if (syncUsernameInput.isNotBlank()) syncUsernameInput else "katurtusridhar") }
         var passDialogText by remember { mutableStateOf("") }
         var inputError by remember { mutableStateOf<String?>(null) }
+        var isAuthenticating by remember { mutableStateOf(false) }
 
         AlertDialog(
-            onDismissRequest = { showSyncAccountDialog = false },
+            onDismissRequest = { if (!isAuthenticating) showSyncAccountDialog = false },
             title = {
-                Text("Companion Sync Credentials", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                Text("Companion Sync Sign-In", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
             },
             text = {
                 Column {
                     Text(
-                        "Enter your website username and password to authenticate Android-to-Website progress synchronization. Credentials are stored securely in private device preferences.",
+                        "Sign in to authenticate Android-to-Website synchronization. A revocable session token is generated and protected with Android KeyStore encryption. Your password is never saved to device storage.",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
@@ -692,7 +747,8 @@ fun SettingsScreen(
                         onValueChange = { userDialogText = it },
                         label = { Text("Username") },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        enabled = !isAuthenticating
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
@@ -701,7 +757,8 @@ fun SettingsScreen(
                         label = { Text("Password") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
+                        visualTransformation = PasswordVisualTransformation(),
+                        enabled = !isAuthenticating
                     )
                     if (inputError != null) {
                         Spacer(modifier = Modifier.height(6.dp))
@@ -718,25 +775,39 @@ fun SettingsScreen(
                             inputError = "Username and password cannot be empty."
                             return@Button
                         }
-                        SyncApiClient.saveCredentials(context, cleanUser, cleanPass)
-                        syncUsernameInput = cleanUser
-                        isSyncConfigured = true
-                        showSyncAccountDialog = false
-                        Toast.makeText(context, "Credentials saved securely.", Toast.LENGTH_SHORT).show()
                         scope.launch {
-                            val res = repository.syncWithCloud()
-                            if (res.success) {
-                                Toast.makeText(context, "Initial sync verified!", Toast.LENGTH_SHORT).show()
+                            isAuthenticating = true
+                            inputError = null
+                            val res = SyncApiClient.authenticateAndSaveSession(context, cleanUser, cleanPass)
+                            isAuthenticating = false
+                            when (res) {
+                                is SessionAuthResult.Success -> {
+                                    syncUsernameInput = cleanUser
+                                    syncStatus = CompanionSessionStatus.CONNECTED
+                                    showSyncAccountDialog = false
+                                    Toast.makeText(context, "Authenticated successfully. Session token stored in KeyStore.", Toast.LENGTH_SHORT).show()
+                                    repository.syncWithCloud()
+                                }
+                                is SessionAuthResult.AuthFailed -> {
+                                    inputError = res.errorMessage
+                                }
+                                is SessionAuthResult.NetworkError -> {
+                                    inputError = res.errorMessage
+                                }
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                    enabled = !isAuthenticating
                 ) {
-                    Text("Save & Connect")
+                    Text(if (isAuthenticating) "Authenticating..." else "Authenticate & Connect")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showSyncAccountDialog = false }) {
+                TextButton(
+                    onClick = { showSyncAccountDialog = false },
+                    enabled = !isAuthenticating
+                ) {
                     Text("Cancel", color = colors.textSecondary)
                 }
             }

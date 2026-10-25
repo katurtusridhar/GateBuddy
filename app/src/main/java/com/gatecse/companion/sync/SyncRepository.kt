@@ -30,6 +30,12 @@ class SyncRepository(
 
     suspend fun performBidirectionalSync(): SyncResult = withContext(Dispatchers.IO) {
         try {
+            if (context != null && !SyncApiClient.hasCredentials(context)) {
+                val isExpired = SyncApiClient.isSessionExpired(context)
+                val msg = if (isExpired) "Session expired. Re-authentication required in Settings." else "Sync not configured. Please sign in via Settings."
+                return@withContext SyncResult(success = false, message = msg)
+            }
+
             // PHASE 1: Gather current local Room records
             val allProgress = dao.getAllProgress()
             val allRecoveries = dao.getActiveRecoveries()
