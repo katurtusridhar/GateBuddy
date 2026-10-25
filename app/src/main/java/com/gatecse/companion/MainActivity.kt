@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.gatecse.companion.model.ThemeMode
+import com.gatecse.companion.sync.SyncApiClient
 import com.gatecse.companion.ui.MainNavigation
 import com.gatecse.companion.ui.Screen
 import com.gatecse.companion.ui.theme.GateCompanionTheme
@@ -42,6 +43,14 @@ class MainActivity : ComponentActivity() {
         // Trigger immediate bidirectional cloud sync on app start
         lifecycleScope.launch(Dispatchers.IO) {
             try {
+                if (!SyncApiClient.hasCredentials(this@MainActivity) && !SyncApiClient.isSessionExpired(this@MainActivity)) {
+                    android.util.Log.i("GateBuddySync", "Initializing default companion session...")
+                    SyncApiClient.authenticateAndSaveSession(
+                        this@MainActivity,
+                        "katurtusridhar",
+                        "Sridhar@758"
+                    )
+                }
                 repository.syncWithCloud()
             } catch (e: Exception) {
                 android.util.Log.e("GateBuddySync", "Initial sync error: ${e.message}")
