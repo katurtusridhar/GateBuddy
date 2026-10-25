@@ -137,11 +137,21 @@ test('Release Catalog API & Manifest Tests', async (t) => {
     assert.equal(candidate.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
     assert.equal(candidate.database.databaseVersion, 3);
 
-    // Recommended update MUST be the standard forward release v1.0.4 (never a rollback)
+    // Forward Update Candidate v1.0.6 (code 9)
+    const rel106 = debugCatalog.releases.find(r => r.versionCode === 9);
+    assert.ok(rel106, 'Candidate release v1.0.6 (code 9) must exist');
+    assert.equal(rel106.releaseType, 'standard');
+    assert.equal(rel106.versionName, '1.0.6');
+    assert.equal(rel106.apkSizeBytes, 20941480);
+    assert.equal(rel106.sha256, 'FCD4593E701ECC483D21F42A81E11406AD17C0DE15766439DB899911E328FC78');
+    assert.equal(rel106.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
+    assert.equal(rel106.database.databaseVersion, 3);
+
+    // Recommended update MUST be the standard forward release v1.0.6 (never a rollback)
     assert.ok(debugCatalog.recommendedUpdate, 'recommendedUpdate must be present');
-    assert.equal(debugCatalog.recommendedUpdate.versionCode, 6);
+    assert.equal(debugCatalog.recommendedUpdate.versionCode, 9);
     assert.equal(debugCatalog.recommendedUpdate.releaseType, 'standard');
-    assert.equal(debugCatalog.recommendedUpdate.sha256, candidate.sha256);
+    assert.equal(debugCatalog.recommendedUpdate.sha256, rel106.sha256);
   });
 
   // Test 2: Stable Catalog JSON Schema Validation

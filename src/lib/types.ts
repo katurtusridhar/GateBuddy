@@ -195,6 +195,7 @@ export interface PreparationAdherenceUi {
   totalEligibleTasks: number;
   currentBacklogCount: number;
   dailyPointsToday: number;
+  averageDailyPoints: number;
   totalPointsAllTime: number;
   projectedCompletionDate: string;
   daysDifference: number;

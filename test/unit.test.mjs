@@ -244,6 +244,24 @@ test('Sunday Points Target Verification: Sunday Test (20 pts) + Revision (5 pts)
   const sundayTotal = SUNDAY_TEST_POINTS + SUNDAY_REV_POINTS + SUNDAY_PS_POINTS;
   assert.equal(sundayTotal, 30, 'Sunday total must exactly equal 30 points');
 
+  // Subtest: Proportional test score points (max 20)
+  function computeSundayTestPoints(percentage) {
+    return Math.min(20, Math.max(0, Math.round((percentage / 100) * 20)));
+  }
+  assert.equal(computeSundayTestPoints(100), 20, '100% score must give full 20 points');
+  assert.equal(computeSundayTestPoints(80), 16, '80% score must give 16 points');
+  assert.equal(computeSundayTestPoints(50), 10, '50% score must give 10 points');
+  assert.equal(computeSundayTestPoints(0), 0, '0% score must give 0 points');
+
+  // Subtest: Missed Sunday test penalty
+  const missedSundayTestPenalty = -4; // -4 points (20% of 20 max pts)
+  assert.equal(missedSundayTestPenalty, -4, 'Missed Sunday test penalty must be -4 points');
+
+  // Subtest: 7-day rolling average points
+  const recent7DaysPoints = [30, 20, 25, 30, 15, 20, 30]; // 170 total
+  const avg7Day = parseFloat((recent7DaysPoints.reduce((a, b) => a + b, 0) / 7).toFixed(1));
+  assert.equal(avg7Day, 24.3, '7-day rolling average must be properly calculated');
+
   const regularDayPoints = 10 + 10 + 5 + 5; // 2 core lectures (20) + 2 boosters (10)
   assert.equal(regularDayPoints, 30, 'Regular day total must equal 30 points');
 

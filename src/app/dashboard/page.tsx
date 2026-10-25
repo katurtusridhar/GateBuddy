@@ -39,6 +39,7 @@ export default function DashboardPage() {
     customTasks,
     settings,
     credentials,
+    assessments,
     changeCredentials,
   } = useApp();
 
@@ -100,9 +101,10 @@ export default function DashboardPage() {
         todayDateStr,
         tasks.filter((t) => t.date === todayDateStr),
         progress,
-        customTasks
+        customTasks,
+        assessments
       ),
-    [todayDateStr, tasks, progress, customTasks]
+    [todayDateStr, tasks, progress, customTasks, assessments]
   );
 
   const adherence = useMemo(
@@ -112,9 +114,10 @@ export default function DashboardPage() {
         tasks,
         Array.from(progress.values()),
         customTasks,
-        settings.targetExamDate
+        settings.targetExamDate,
+        assessments
       ),
-    [todayDateStr, tasks, progress, customTasks, settings.targetExamDate]
+    [todayDateStr, tasks, progress, customTasks, settings.targetExamDate, assessments]
   );
 
   const totalTodayTasks = todayTasks.length;
@@ -284,6 +287,10 @@ export default function DashboardPage() {
               <p className="mt-3 text-xs text-slate-300">{adherence.healthReason}</p>
 
               <div className="mt-4 space-y-2.5 border-t border-slate-800/80 pt-3 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">7-Day Avg Score:</span>
+                  <span className="font-bold text-gate-sky">{adherence.averageDailyPoints} pts/day</span>
+                </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">7-Day Adherence:</span>
                   <span className="font-bold text-white">{adherence.sevenDayAdherencePercent}%</span>

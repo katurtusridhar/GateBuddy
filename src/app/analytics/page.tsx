@@ -16,7 +16,7 @@ import {
 import clsx from "clsx";
 
 export default function AnalyticsPage() {
-  const { tasks, progress, customTasks, todayDateStr, settings } = useApp();
+  const { tasks, progress, customTasks, todayDateStr, settings, assessments } = useApp();
 
   const adherence = useMemo(() => {
     return calculateAdherenceAndForecast(
@@ -24,9 +24,10 @@ export default function AnalyticsPage() {
       tasks,
       Array.from(progress.values()),
       customTasks,
-      settings.targetExamDate
+      settings.targetExamDate,
+      assessments
     );
-  }, [todayDateStr, tasks, progress, customTasks, settings.targetExamDate]);
+  }, [todayDateStr, tasks, progress, customTasks, settings.targetExamDate, assessments]);
 
   return (
     <AppShell>
@@ -81,9 +82,9 @@ export default function AnalyticsPage() {
         {/* Adherence Rates Row */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <CyberCard glow="sky">
-            <span className="text-[11px] font-semibold text-slate-400 uppercase">7-Day Adherence</span>
-            <p className="mt-2 text-3xl font-extrabold text-white">{adherence.sevenDayAdherencePercent}%</p>
-            <p className="mt-1 text-[11px] text-slate-400">Recent 7-day completion</p>
+            <span className="text-[11px] font-semibold text-slate-400 uppercase">7-Day Avg Score</span>
+            <p className="mt-2 text-3xl font-extrabold text-white">{adherence.averageDailyPoints} pts</p>
+            <p className="mt-1 text-[11px] text-slate-400">Rolling daily score ({adherence.sevenDayAdherencePercent}% adherence)</p>
           </CyberCard>
 
           <CyberCard glow="purple">
