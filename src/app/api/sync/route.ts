@@ -333,7 +333,7 @@ export async function POST(req: NextRequest) {
       const existingMap = new Map(serverSyncState.progress.map((p) => [p.taskId, p]));
       for (const p of progress) {
         const existing = existingMap.get(p.taskId);
-        const incomingIsCompleted = p.isCompleted === true;
+        const incomingIsCompleted = p.isCompleted === true || p.completed === true;
         const incomingMutatedAt = Number(p.lastMutatedTimestamp || p.completedAtTimestamp || 0);
         const isExplicitMutation = p.isExplicitMutation === true;
         const existingCompletedAt = Number(existing?.completedAtTimestamp || 0);
@@ -434,16 +434,27 @@ export async function POST(req: NextRequest) {
 
       try {
         if (Array.isArray(progress) && progress.length > 0) {
-          const rows = progress.map((p) => ({
-            user_id: userUuid,
-            task_id: p.taskId,
-            original_date: p.originalDate,
-            is_completed: p.isCompleted === true,
-            completed_at: p.isCompleted && p.completedAtTimestamp ? new Date(p.completedAtTimestamp).toISOString() : null,
-            completion_type: p.isCompleted ? (p.completionType || "ON_TIME") : null,
-            notes: p.notes || "",
-            updated_at: new Date(mutationTimestamp).toISOString(),
-          }));
+          const rows = progress.map((p) => {
+            const isDone = p.isCompleted === true || p.completed === true;
+            const origDate =
+              p.originalDate ||
+              p.original_date ||
+              (p.taskId && p.taskId.includes("_") ? p.taskId.split("_").pop() : new Date().toISOString().slice(0, 10));
+            return {
+              user_id: userUuid,
+              task_id: p.taskId,
+              original_date: origDate,
+              is_completed: isDone,
+              completed_at: isDone
+                ? p.completedAtTimestamp
+                  ? new Date(p.completedAtTimestamp).toISOString()
+                  : p.completedAt || new Date().toISOString()
+                : null,
+              completion_type: isDone ? p.completionType || "ON_TIME" : null,
+              notes: p.notes || "",
+              updated_at: new Date(mutationTimestamp).toISOString(),
+            };
+          });
           const { error } = await activeTargetClient.from("task_progress").upsert(rows, { onConflict: "user_id,task_id" });
           if (error) {
             console.warn("Supabase task_progress upsert error:", error.message);
@@ -452,16 +463,21 @@ export async function POST(req: NextRequest) {
         }
 
         if (Array.isArray(recoveries) && recoveries.length > 0) {
-          const rows = recoveries.map((r) => ({
-            user_id: userUuid,
-            task_id: r.taskId,
-            original_date: r.originalDate,
-            recovery_date: r.recoveryDate,
-            is_completed: r.isCompleted === true,
-            priority_level: r.priorityLevel || 2,
-            status: r.status,
-            updated_at: new Date(mutationTimestamp).toISOString(),
-          }));
+          const rows = recoveries.map((r) => {
+            const isDone = r.isCompleted === true || r.status === "completed";
+            const origDate = r.originalDate || r.original_date || new Date().toISOString().slice(0, 10);
+            const recDate = r.recoveryDate || r.assignedDate || r.recovery_date || new Date().toISOString().slice(0, 10);
+            return {
+              user_id: userUuid,
+              task_id: r.taskId,
+              original_date: origDate,
+              recovery_date: recDate,
+              is_completed: isDone,
+              priority_level: r.priorityLevel || 2,
+              status: r.status || (isDone ? "completed" : "pending"),
+              updated_at: new Date(mutationTimestamp).toISOString(),
+            };
+          });
           const { error } = await activeTargetClient.from("recovery_assignments").upsert(rows, { onConflict: "user_id,task_id" });
           if (error) {
             console.warn("Supabase recovery_assignments upsert error:", error.message);
