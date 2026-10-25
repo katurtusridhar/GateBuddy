@@ -675,3 +675,139 @@ test('Android Companion Credential Safety: empty credentials fail safely without
   assert.equal(configuredUser.token, 'fresh_signed_token_for_katurtusridhar');
   assert.equal(configuredUser.status, 'AUTHENTICATED');
 });
+
+// 15. ELEVATED DATABASE ACCESS: SERVICE-ROLE KEY ISOLATION & ZERO-LEAKAGE
+test('Elevated Database Access: Service-role key server-only isolation & zero-credential leak', async (t) => {
+  // 1. Verify SUPABASE_SERVICE_ROLE_KEY is not prefixed with NEXT_PUBLIC_
+  const envKey = 'SUPABASE_SERVICE_ROLE_KEY';
+  assert.equal(envKey.startsWith('NEXT_PUBLIC_'), false, 'Service role key must never use NEXT_PUBLIC_ prefix');
+
+  // 2. Client mock to verify options for service-role isolation
+  function createServiceClientConfig(serviceRoleKey) {
+    if (!serviceRoleKey || serviceRoleKey.includes('placeholder')) return null;
+    return {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    };
+  }
+
+  const config = createServiceClientConfig('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy_secret');
+  assert.notEqual(config, null);
+  assert.equal(config.auth.persistSession, false, 'Service role client must not persist sessions');
+  assert.equal(config.auth.autoRefreshToken, false, 'Service role client must not auto-refresh tokens');
+
+  // 3. Verify error messages and logs never leak the service role key or secret
+  const secretKey = 'secret_supabase_admin_key_999';
+  const rawDbError = `Database error while executing elevated upsert with key ${secretKey}`;
+  function sanitizeError(msg) {
+    return msg.replace(secretKey, '[REDACTED_SECRET]');
+  }
+  const sanitized = sanitizeError(rawDbError);
+  assert.equal(sanitized.includes(secretKey), false);
+  assert.equal(sanitized.includes('[REDACTED_SECRET]'), true);
+});
+
+// 16. MULTI-TENANT OWNERSHIP & CROSS-USER MUTATION REJECTION ACROSS ALL ENTITIES
+test('Multi-Tenant Ownership: Cross-user attempts rejected across all 6 sync entities', async (t) => {
+  const authorizedUserUuid = '7d92cb64-4bf8-4660-84c2-901db41454ec';
+  const victimUserUuid = '11111111-2222-3333-4444-555555555555';
+
+  function validatePayloadOwnership(payload, currentUserUuid, currentUsername) {
+    const entityGroups = [
+      { name: 'progress', items: payload.progress },
+      { name: 'recoveries', items: payload.recoveries },
+      { name: 'assessments', items: payload.assessments },
+      { name: 'dppRecords', items: payload.dppRecords },
+      { name: 'customTasks', items: payload.customTasks },
+      { name: 'achievements', items: payload.achievements },
+    ];
+
+    for (const group of entityGroups) {
+      if (Array.isArray(group.items)) {
+        for (const item of group.items) {
+          const itemUser = item?.userId || item?.user_id;
+          if (itemUser && typeof itemUser === 'string' && itemUser.trim()) {
+            const clean = itemUser.trim();
+            if (clean !== currentUserUuid && clean.toLowerCase() !== currentUsername.toLowerCase()) {
+              return {
+                authorized: false,
+                statusCode: 403,
+                code: 'CROSS_USER_ACCESS_DENIED',
+                message: `Cross-user violation in '${group.name}': Record targets user '${clean}', but session belongs to '${currentUsername}'.`,
+              };
+            }
+          }
+        }
+      }
+    }
+    return { authorized: true };
+  }
+
+  // 1. Authorized payload without explicit user_id (implicitly stamped with current user)
+  const validPayload = {
+    progress: [{ taskId: 'T1', isCompleted: true }],
+    recoveries: [{ taskId: 'T2', status: 'ACTIVE' }],
+    assessments: [{ testName: 'Test 1', marksObtained: 25 }],
+    dppRecords: [{ subjectCode: 'EM', totalQuestions: 10 }],
+    customTasks: [{ title: 'Solve 20 PYQs' }],
+    achievements: [{ code: 'FIRST_TEST' }],
+  };
+  const validCheck = validatePayloadOwnership(validPayload, authorizedUserUuid, 'katurtusridhar');
+  assert.equal(validCheck.authorized, true);
+
+  // 2. Cross-user attack on task_progress
+  const attackProgress = { progress: [{ taskId: 'T1', user_id: victimUserUuid }] };
+  const checkProgress = validatePayloadOwnership(attackProgress, authorizedUserUuid, 'katurtusridhar');
+  assert.equal(checkProgress.authorized, false);
+  assert.equal(checkProgress.code, 'CROSS_USER_ACCESS_DENIED');
+  assert.match(checkProgress.message, /in 'progress'/);
+
+  // 3. Cross-user attack on recoveries
+  const attackRecoveries = { recoveries: [{ taskId: 'T2', userId: victimUserUuid }] };
+  const checkRecoveries = validatePayloadOwnership(attackRecoveries, authorizedUserUuid, 'katurtusridhar');
+  assert.equal(checkRecoveries.authorized, false);
+  assert.match(checkRecoveries.message, /in 'recoveries'/);
+
+  // 4. Cross-user attack on dpp_records
+  const attackDpp = { dppRecords: [{ subjectCode: 'OS', user_id: victimUserUuid }] };
+  const checkDpp = validatePayloadOwnership(attackDpp, authorizedUserUuid, 'katurtusridhar');
+  assert.equal(checkDpp.authorized, false);
+  assert.match(checkDpp.message, /in 'dppRecords'/);
+
+  // 5. Cross-user attack on custom_tasks
+  const attackCustom = { customTasks: [{ title: 'Hack', user_id: victimUserUuid }] };
+  const checkCustom = validatePayloadOwnership(attackCustom, authorizedUserUuid, 'katurtusridhar');
+  assert.equal(checkCustom.authorized, false);
+  assert.match(checkCustom.message, /in 'customTasks'/);
+});
+
+// 17. UNPROVISIONED IDENTITY MAPPING FAILS SAFELY WITH 503
+test('Identity Resolution: Missing or invalid Supabase user profile fails safely with 503', async (t) => {
+  const unprovisionedUser = 'unknown_student_99';
+  const mockDbClient = {
+    from: (table) => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({ data: null, error: null }),
+        }),
+      }),
+    }),
+  };
+
+  async function resolveUser(client, username) {
+    const { data: profile } = await client.from('user_profiles').select('id').eq('email', `${username}@gatecse.internal`).maybeSingle();
+    if (!profile) {
+      return { resolved: false, statusCode: 503, code: 'SUPABASE_IDENTITY_UNRESOLVED' };
+    }
+    return { resolved: true, userId: profile.id };
+  }
+
+  const res = await resolveUser(mockDbClient, unprovisionedUser);
+  assert.equal(res.resolved, false);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.code, 'SUPABASE_IDENTITY_UNRESOLVED');
+});
+

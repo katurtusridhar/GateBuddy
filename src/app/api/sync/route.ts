@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   getAuthorizedUser,
   resolveSupabaseUserId,
@@ -57,30 +58,32 @@ export async function GET(req: NextRequest) {
 
   let maxDbTimestamp = 0;
   const dbErrors: any[] = [];
+  const dbClient = getSupabaseServiceClient() || (isSupabaseConfigured ? supabase : null);
+  const isDbActive = Boolean(dbClient);
 
   // If Supabase is configured, fetch persistent records from PostgreSQL filtered by verified user identity
-  if (isSupabaseConfigured) {
+  if (isDbActive && dbClient) {
     try {
-      const userRes = await resolveSupabaseUserId(supabase, auth.username);
+      const userRes = await resolveSupabaseUserId(dbClient, auth.username);
       if (!userRes.resolved || !userRes.userId) {
         dbErrors.push({ table: "user_profiles", err: userRes.error });
       } else {
         const userUuid = userRes.userId;
         const [progRes, recRes, assessRes, customRes, achRes, dppRes] = await Promise.all([
-          supabase.from("task_progress").select("*").eq("user_id", userUuid),
-          supabase.from("recovery_assignments").select("*").eq("user_id", userUuid),
-          supabase.from("assessment_results").select("*").eq("user_id", userUuid),
-          supabase.from("custom_tasks").select("*").eq("user_id", userUuid),
+          dbClient.from("task_progress").select("*").eq("user_id", userUuid),
+          dbClient.from("recovery_assignments").select("*").eq("user_id", userUuid),
+          dbClient.from("assessment_results").select("*").eq("user_id", userUuid),
+          dbClient.from("custom_tasks").select("*").eq("user_id", userUuid),
           (async () => {
             try {
-              return await supabase.from("user_achievements").select("*").eq("user_id", userUuid);
+              return await dbClient.from("user_achievements").select("*").eq("user_id", userUuid);
             } catch {
               return { data: null, error: null };
             }
           })(),
           (async () => {
             try {
-              return await supabase.from("dpp_records").select("*");
+              return await dbClient.from("dpp_records").select("*").eq("user_id", userUuid);
             } catch {
               return { data: null, error: null };
             }
@@ -179,7 +182,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     status: "ok",
-    backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
+    backendType: isDbActive ? "supabase_postgresql" : "in_memory_serverless",
     hasUpdates,
     timestamp: durableTimestamp,
     serverVersion: durableVersion,
@@ -239,6 +242,57 @@ export async function POST(req: NextRequest) {
     const baseTimestamp = Math.max(serverSyncState.lastUpdated, globalServerVersion);
     const mutationTimestamp = Math.max(Date.now(), baseTimestamp + 1);
     globalServerVersion = mutationTimestamp;
+
+    const dbClient = getSupabaseServiceClient() || (isSupabaseConfigured ? supabase : null);
+    const isDbActive = Boolean(dbClient);
+    let resolvedUserUuid: string | null = null;
+
+    // If Supabase is active, resolve user identity upfront and enforce multi-tenant ownership
+    if (isDbActive && dbClient) {
+      const userRes = await resolveSupabaseUserId(dbClient, auth.username);
+      if (!userRes.resolved || !userRes.userId) {
+        return NextResponse.json(
+          {
+            status: "error",
+            code: "SUPABASE_IDENTITY_UNRESOLVED",
+            message: `Cannot persist to PostgreSQL: ${userRes.error}`,
+          },
+          { status: 503 }
+        );
+      }
+      resolvedUserUuid = userRes.userId;
+
+      // Check all incoming entities for cross-user tampering
+      const entityGroups = [
+        { name: "progress", items: progress },
+        { name: "recoveries", items: recoveries },
+        { name: "assessments", items: assessments },
+        { name: "dppRecords", items: dppRecords },
+        { name: "customTasks", items: customTasks },
+        { name: "achievements", items: achievements },
+      ];
+
+      for (const group of entityGroups) {
+        if (Array.isArray(group.items)) {
+          for (const item of group.items) {
+            const itemUser = item?.userId || item?.user_id;
+            if (itemUser && typeof itemUser === "string" && itemUser.trim()) {
+              const clean = itemUser.trim();
+              if (clean !== resolvedUserUuid && clean.toLowerCase() !== auth.username.toLowerCase()) {
+                return NextResponse.json(
+                  {
+                    status: "forbidden",
+                    code: "CROSS_USER_ACCESS_DENIED",
+                    message: `Cross-user violation in '${group.name}': Record targets user '${clean}', but session belongs to '${auth.username}'.`,
+                  },
+                  { status: 403 }
+                );
+              }
+            }
+          }
+        }
+      }
+    }
 
     // Apply authoritative merge for progress with deterministic conflict resolution
     if (Array.isArray(progress)) {
@@ -340,22 +394,9 @@ export async function POST(req: NextRequest) {
     serverSyncState.serverVersion = globalServerVersion;
 
     // If Supabase is configured, persist all modified entities to PostgreSQL
-    if (isSupabaseConfigured) {
+    if (isDbActive && dbClient && resolvedUserUuid) {
       const dbErrors: any[] = [];
-      const userRes = await resolveSupabaseUserId(supabase, auth.username);
-
-      if (!userRes.resolved || !userRes.userId) {
-        return NextResponse.json(
-          {
-            status: "error",
-            code: "SUPABASE_IDENTITY_UNRESOLVED",
-            message: `Cannot persist to PostgreSQL: ${userRes.error}`,
-          },
-          { status: 503 }
-        );
-      }
-
-      const userUuid = userRes.userId;
+      const userUuid = resolvedUserUuid;
 
       try {
         if (Array.isArray(progress) && progress.length > 0) {
@@ -369,7 +410,7 @@ export async function POST(req: NextRequest) {
             notes: p.notes || "",
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await supabase.from("task_progress").upsert(rows, { onConflict: "user_id,task_id" });
+          const { error } = await dbClient.from("task_progress").upsert(rows, { onConflict: "user_id,task_id" });
           if (error) {
             console.warn("Supabase task_progress upsert error:", error.message);
             dbErrors.push({ table: "task_progress", error: error.message });
@@ -387,7 +428,7 @@ export async function POST(req: NextRequest) {
             status: r.status,
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await supabase.from("recovery_assignments").upsert(rows, { onConflict: "user_id,task_id" });
+          const { error } = await dbClient.from("recovery_assignments").upsert(rows, { onConflict: "user_id,task_id" });
           if (error) {
             console.warn("Supabase recovery_assignments upsert error:", error.message);
             dbErrors.push({ table: "recovery_assignments", error: error.message });
@@ -404,7 +445,7 @@ export async function POST(req: NextRequest) {
               unlocked_at: a.unlockedAtTimestamp ? new Date(a.unlockedAtTimestamp).toISOString() : new Date().toISOString(),
             }));
           if (rows.length > 0) {
-            const { error } = await supabase.from("user_achievements").upsert(rows, { onConflict: "user_id,code" });
+            const { error } = await dbClient.from("user_achievements").upsert(rows, { onConflict: "user_id,code" });
             if (error) {
               console.warn("Supabase user_achievements upsert error:", error.message);
               dbErrors.push({ table: "user_achievements", error: error.message });
@@ -428,7 +469,7 @@ export async function POST(req: NextRequest) {
             follow_up_tasks: a.followUpTasks || "",
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await supabase.from("assessment_results").upsert(rows);
+          const { error } = await dbClient.from("assessment_results").upsert(rows);
           if (error) {
             console.warn("Supabase assessment_results upsert error:", error.message);
             dbErrors.push({ table: "assessment_results", error: error.message });
@@ -436,7 +477,20 @@ export async function POST(req: NextRequest) {
         }
 
         if (Array.isArray(dppRecords) && dppRecords.length > 0) {
-          const { error } = await supabase.from("dpp_records").upsert(dppRecords);
+          const rows = dppRecords.map((d: any) => ({
+            user_id: userUuid,
+            date: d.date,
+            subject_code: d.subjectCode || d.subject_code || "GATE",
+            subject_name: d.subjectName || d.subject_name || "General",
+            topic: d.topic || "",
+            total_questions: Number(d.totalQuestions || d.total_questions || 0),
+            questions_correct: Number(d.questionsCorrect || d.questions_correct || 0),
+            accuracy_percentage: Number(d.accuracyPercentage || d.accuracy_percentage || 0.0),
+            notes: d.notes || "",
+            created_at: d.createdAtTimestamp ? new Date(d.createdAtTimestamp).toISOString() : new Date().toISOString(),
+            updated_at: new Date(mutationTimestamp).toISOString(),
+          }));
+          const { error } = await dbClient.from("dpp_records").upsert(rows);
           if (error) {
             console.warn("Supabase dpp_records upsert error:", error.message);
             dbErrors.push({ table: "dpp_records", error: error.message });
@@ -456,7 +510,7 @@ export async function POST(req: NextRequest) {
             points_value: c.pointsValue || 5,
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await supabase.from("custom_tasks").upsert(rows);
+          const { error } = await dbClient.from("custom_tasks").upsert(rows);
           if (error) {
             console.warn("Supabase custom_tasks upsert error:", error.message);
             dbErrors.push({ table: "custom_tasks", error: error.message });
@@ -483,7 +537,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       status: "synced",
-      backendType: isSupabaseConfigured ? "supabase_postgresql" : "in_memory_serverless",
+      backendType: isDbActive ? "supabase_postgresql" : "in_memory_serverless",
       timestamp: serverSyncState.lastUpdated,
       serverVersion: globalServerVersion,
       data: sanitizeSyncState(serverSyncState),
