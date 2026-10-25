@@ -1184,12 +1184,14 @@ class ScheduleRepository(
         val allProgress = dao.getAllProgress()
         val activeRecoveries = dao.getActiveRecoveries()
         val allCustom = dao.getAllCustomTasks()
+        val allAssessments = dao.getAllAssessments()
         AnalyticsEngine.calculateAdherenceAndForecast(
             currentDateStr = currentDateStr,
             allTasks = allTasks,
             allProgress = allProgress,
             activeRecoveries = activeRecoveries,
-            allCustomTasks = allCustom
+            allCustomTasks = allCustom,
+            allAssessments = allAssessments
         )
     }
 

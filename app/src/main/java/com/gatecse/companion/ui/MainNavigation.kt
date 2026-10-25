@@ -34,6 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -198,7 +202,13 @@ fun MainNavigation(
                         label = {
                             Text(
                                 text = screen.title,
-                                fontSize = 10.sp
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = if (screen == Screen.Tests) 8.5.sp else 10.sp,
+                                letterSpacing = if (screen == Screen.Tests) (-0.3).sp else TextUnit.Unspecified,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                textAlign = TextAlign.Center
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(

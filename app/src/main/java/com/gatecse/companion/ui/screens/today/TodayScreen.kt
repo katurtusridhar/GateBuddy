@@ -492,6 +492,8 @@ fun TodayScreen(
                                     "⚠️ Restricted: Reschedule backlogs first"
                                 } else if (dailyPercent == 100) {
                                     "Outstanding consistency! Points logged."
+                                } else if (isSunday) {
+                                    "Test (max +20) • Rev (+5) • PYQ (+5)"
                                 } else {
                                     "Lec (+10) • Rev (+5) • PS (+5)"
                                 },
@@ -507,13 +509,16 @@ fun TodayScreen(
 
         // 5. Stat Row: 7-Day Average Points & Backlog Count
         item {
+            val avgPts = adherenceMetrics?.averageDailyPoints ?: 0.0
+            val formattedAvg = if (avgPts % 1.0 == 0.0) "${avgPts.toInt()} pts" else "${String.format("%.1f", avgPts)} pts"
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 MetricStatCard(
                     title = "7-Day Avg Score",
-                    value = "${adherenceMetrics?.averageDailyPoints?.toInt() ?: 0} pts",
+                    value = formattedAvg,
                     subtitle = "Rolling daily points",
                     accentColor = colors.primary,
                     modifier = Modifier.weight(1f)

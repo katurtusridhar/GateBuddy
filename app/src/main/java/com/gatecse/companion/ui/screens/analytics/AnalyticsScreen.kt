@@ -230,14 +230,14 @@ fun AnalyticsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         PointRuleBadge(label = "Lecture", value = "+10 pts", color = colors.emerald)
-                        PointRuleBadge(label = "Revision", value = "+5 pts", color = colors.primary)
-                        PointRuleBadge(label = "Problem Solving", value = "+5 pts", color = colors.sky)
-                        PointRuleBadge(label = "Missed", value = "-2 pts", color = colors.rose)
+                        PointRuleBadge(label = "Sunday Test", value = "max +20", color = colors.amber)
+                        PointRuleBadge(label = "Revision/PYQ", value = "+5 pts", color = colors.primary)
+                        PointRuleBadge(label = "Missed", value = "-2 / -4", color = colors.rose)
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Daily non-Sunday points are averaged. Maintaining ≥25 pts/day ensures ON TRACK status. Sunday backlog tasks contribute standard +10 pts upon recovery.",
+                        text = "Rolling 7-day average points are tracked (Target: 30 pts/day). Sunday tests award up to +20 pts based on score percentage with a -4 pts penalty if missed. Regular missed lectures deduct -2 pts.",
                         fontSize = 11.sp,
                         color = colors.textMuted,
                         lineHeight = 16.sp
@@ -252,9 +252,9 @@ fun AnalyticsScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     MetricStatCard(
-                        title = "Avg Points",
+                        title = "7-Day Avg Score",
                         value = "${String.format("%.1f", m.averageDailyPoints)}",
-                        subtitle = "Daily non-Sunday average",
+                        subtitle = "Rolling daily average",
                         accentColor = colors.sky,
                         modifier = Modifier.weight(1f)
                     )

@@ -238,4 +238,135 @@ class AnalyticsEngineTest {
         assertEquals("Sunday Test (20) + PYQ (5) + Booster Revision (5) must equal exactly 30 points", 30, scoreUi.dailyPoints)
         assertEquals(100, scoreUi.scorePercentage)
     }
+
+    @Test
+    fun testSundayScoreProportionalPoints() {
+        val sundayStr = "2026-10-25"
+        val sundayTasks = listOf(
+            ScheduleTaskEntity(
+                id = "SUN_TEST_01",
+                date = sundayStr,
+                dayOfWeek = "Sun",
+                slot = 1,
+                subject = "Full-Syllabus Mock",
+                type = "SUNDAY_TEST",
+                curNum = 1,
+                totalCount = 49,
+                title = "Sunday Test",
+                details = "",
+                milestone = "",
+                sourcePage = 1,
+                isBuffer = false,
+                isRevision = false,
+                isSundayActivity = true
+            ),
+            ScheduleTaskEntity(
+                id = "SUN_PYQ_01",
+                date = sundayStr,
+                dayOfWeek = "Sun",
+                slot = 2,
+                subject = "PYQ Practice",
+                type = "SUNDAY_PYQ",
+                curNum = 1,
+                totalCount = 49,
+                title = "Sunday PYQ",
+                details = "",
+                milestone = "",
+                sourcePage = 1,
+                isBuffer = false,
+                isRevision = false,
+                isSundayActivity = true
+            )
+        )
+
+        // Case A: 80% marks recorded (e.g. 40/50 -> 16 pts). With PYQ (5) + Rev (5) -> 26 pts total
+        val progressMap80 = mapOf(
+            "SUN_TEST_01" to TaskProgressEntity("SUN_TEST_01", sundayStr, true, notes = "[TEST] Marks: 40/50"),
+            "SUN_PYQ_01" to TaskProgressEntity("SUN_PYQ_01", sundayStr, true),
+            "BOOSTER_REV_$sundayStr" to TaskProgressEntity("BOOSTER_REV_$sundayStr", sundayStr, true)
+        )
+        val score80 = AnalyticsEngine.calculateDailyScore(
+            targetDateStr = sundayStr,
+            currentDateStr = sundayStr,
+            dayTasks = sundayTasks,
+            progressMap = progressMap80
+        )
+        assertEquals("80% score (40/50) should award 16 test pts + 5 PYQ + 5 Rev = 26 pts", 26, score80.dailyPoints)
+
+        // Case B: 50% marks recorded (e.g. 25/50 -> 10 pts). With PYQ (5) + Rev (5) -> 20 pts total
+        val progressMap50 = mapOf(
+            "SUN_TEST_01" to TaskProgressEntity("SUN_TEST_01", sundayStr, true, notes = "[TEST] Marks: 25/50"),
+            "SUN_PYQ_01" to TaskProgressEntity("SUN_PYQ_01", sundayStr, true),
+            "BOOSTER_REV_$sundayStr" to TaskProgressEntity("BOOSTER_REV_$sundayStr", sundayStr, true)
+        )
+        val score50 = AnalyticsEngine.calculateDailyScore(
+            targetDateStr = sundayStr,
+            currentDateStr = sundayStr,
+            dayTasks = sundayTasks,
+            progressMap = progressMap50
+        )
+        assertEquals("50% score (25/50) should award 10 test pts + 5 PYQ + 5 Rev = 20 pts", 20, score50.dailyPoints)
+    }
+
+    @Test
+    fun testMissedSundayTestPenalty() {
+        val sundayStr = "2026-10-18" // Past Sunday
+        val sundayTasks = listOf(
+            ScheduleTaskEntity(
+                id = "SUN_TEST_PAST",
+                date = sundayStr,
+                dayOfWeek = "Sun",
+                slot = 1,
+                subject = "Weekly Test",
+                type = "SUNDAY_TEST",
+                curNum = 1,
+                totalCount = 49,
+                title = "Sunday Test",
+                details = "",
+                milestone = "",
+                sourcePage = 1,
+                isBuffer = false,
+                isRevision = false,
+                isSundayActivity = true
+            )
+        )
+        // User only completed revision booster (+5 pts) on past Sunday, but missed the test (-4 pts)
+        val progressMap = mapOf(
+            "BOOSTER_REV_$sundayStr" to TaskProgressEntity("BOOSTER_REV_$sundayStr", sundayStr, true)
+        )
+        val scoreUi = AnalyticsEngine.calculateDailyScore(
+            targetDateStr = sundayStr,
+            currentDateStr = "2026-10-25", // Current is later date
+            dayTasks = sundayTasks,
+            progressMap = progressMap
+        )
+        // 5 (Revision) - 4 (Missed Sunday Test penalty) = 1 pt
+        assertEquals("Missed Sunday test penalty (-4) applied against earned points (5) = 1 pt", 1, scoreUi.dailyPoints)
+    }
+
+    @Test
+    fun testSevenDayRollingAverageCalculation() {
+        val todayStr = "2026-10-25"
+        val tasks = (0..6).map { dayOffset ->
+            val date = java.time.LocalDate.parse(todayStr).minusDays(dayOffset.toLong()).toString()
+            createDummyTask("T_${dayOffset}_1", date, 1)
+        }
+
+        // Complete 1 lecture (10 pts) on each of the 7 days -> 70 total pts / 7 days = 10.0 pts/day
+        val allProgress = (0..6).map { dayOffset ->
+            val date = java.time.LocalDate.parse(todayStr).minusDays(dayOffset.toLong()).toString()
+            TaskProgressEntity("T_${dayOffset}_1", date, true, completionType = "ON_TIME")
+        }
+
+        val metrics = AnalyticsEngine.calculateAdherenceAndForecast(
+            currentDateStr = todayStr,
+            allTasks = tasks,
+            allProgress = allProgress,
+            activeRecoveries = emptyList()
+        )
+
+        // 7 days * 10 pts = 70 pts total -> averageDailyPoints = 10.0
+        assertEquals(10.0, metrics.averageDailyPoints, 0.01)
+        assertTrue(metrics.healthReason.contains("7-day average"))
+    }
 }
