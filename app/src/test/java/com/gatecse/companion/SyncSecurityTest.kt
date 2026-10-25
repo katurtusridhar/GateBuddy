@@ -154,6 +154,65 @@ class SyncSecurityTest {
         assertEquals(CompanionSessionStatus.CONNECTED, SyncApiClient.getSessionStatus(null))
     }
 
+    @Test
+    fun testAuthenticationTagFailureTriggersCleanRecovery() {
+        val originalToken = "valid_session_token_before_tamper"
+        SecureTokenStorage.saveToken(null, originalToken)
+
+        // Retrieve raw Base64 ciphertext from preferences
+        val rawBase64 = testPrefs.getString("enc_session_token", null)
+        assertNotNull(rawBase64)
+
+        // Tamper with the raw ciphertext (flip last byte of authentication tag)
+        val rawBytes = java.util.Base64.getDecoder().decode(rawBase64)
+        rawBytes[rawBytes.size - 1] = (rawBytes[rawBytes.size - 1].toInt() xor 0xFF).toByte()
+        val tamperedBase64 = java.util.Base64.getEncoder().encodeToString(rawBytes)
+
+        // Put tampered ciphertext back in storage
+        testPrefs.edit().putString("enc_session_token", tamperedBase64).apply()
+
+        // Attempting to retrieve token should detect AEAD authentication tag failure,
+        // safely catch AEADBadTagException, clean up the corrupted token, and return null
+        val result = SecureTokenStorage.getToken(null)
+        assertNull("Tampered ciphertext must fail AEAD verification and return null", result)
+        assertFalse("Corrupted token must be pruned from storage", SecureTokenStorage.hasToken(null))
+    }
+
+    @Test
+    fun testKeyInvalidationAndRecovery() {
+        val originalToken = "token_before_key_invalidation"
+        SecureTokenStorage.saveToken(null, originalToken)
+        assertEquals(originalToken, SecureTokenStorage.getToken(null))
+
+        // Invalidate the underlying cryptographic key
+        SecureTokenStorage.getProvider().invalidateKey()
+
+        // Attempting to decrypt with invalidated key must fail safely and auto-recover
+        val unreadableToken = SecureTokenStorage.getToken(null)
+        assertNull("Invalidated key must not decrypt previous ciphertext", unreadableToken)
+        assertFalse("Unreadable token must be cleared from storage", SecureTokenStorage.hasToken(null))
+
+        // Saving a fresh token with the newly generated key works seamlessly
+        val freshToken = "fresh_token_after_key_regeneration"
+        SecureTokenStorage.saveToken(null, freshToken)
+        assertEquals(freshToken, SecureTokenStorage.getToken(null))
+    }
+
+    @Test
+    fun testSecurityLevelReporting() {
+        val level = SecureTokenStorage.getEffectiveSecurityLevel()
+        assertNotNull(level)
+        // In JVM test environment, software provider is active
+        assertEquals(KeySecurityLevel.SOFTWARE_BACKED, level)
+
+        // Verify all security levels exist in enum for Android StrongBox / TEE detection
+        val values = KeySecurityLevel.values()
+        assertTrue(values.contains(KeySecurityLevel.STRONGBOX_BACKED))
+        assertTrue(values.contains(KeySecurityLevel.TEE_BACKED))
+        assertTrue(values.contains(KeySecurityLevel.HARDWARE_BACKED))
+        assertTrue(values.contains(KeySecurityLevel.SOFTWARE_BACKED))
+    }
+
     class InMemoryTestSharedPreferences : SharedPreferences {
         private val data = mutableMapOf<String, Any?>()
 

@@ -1,7 +1,9 @@
 package com.gatecse.companion.sync
 
 import android.content.Context
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
@@ -10,7 +12,16 @@ import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
+
+enum class KeySecurityLevel {
+    STRONGBOX_BACKED,
+    TEE_BACKED,
+    HARDWARE_BACKED,
+    SOFTWARE_BACKED,
+    UNKNOWN
+}
 
 /**
  * Android-supported, Keystore-backed storage for sensitive companion session tokens.
@@ -18,13 +29,18 @@ import javax.crypto.spec.GCMParameterSpec
  * Security architecture:
  * 1. Passwords are NEVER persisted to disk after authentication.
  * 2. Only the revocable session token is persisted.
- * 3. The token is protected using standard hardware-backed AES-256 GCM authenticated
- *    encryption via AndroidKeyStore (API 26+).
- * 4. Zero custom cryptography or hardcoded secrets.
+ * 3. The token is protected using standard AES-256 GCM authenticated encryption (API 26+).
+ *    Where hardware support exists, keys reside inside TEE or StrongBox Keymaster.
+ * 4. Practical compatibility: Gracefully functions on all supported Android devices without
+ *    making hardware keystore an unconditional blocker for budget devices.
+ * 5. Robust resilience: AEAD tag verification failures or key invalidation trigger clean
+ *    session recovery rather than crashes.
  */
 interface TokenCryptoProvider {
     fun encrypt(plainText: String): String
     fun decrypt(cipherText: String): String
+    fun getSecurityLevel(): KeySecurityLevel
+    fun invalidateKey()
 }
 
 class AndroidKeyStoreCryptoProvider(
@@ -36,25 +52,47 @@ class AndroidKeyStoreCryptoProvider(
     }
 
     private fun getOrCreateKey(): SecretKey {
-        if (!keyStore.containsAlias(keyAlias)) {
-            val keyGenerator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES,
-                "AndroidKeyStore"
-            )
-            val spec = KeyGenParameterSpec.Builder(
-                keyAlias,
-                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-            )
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build()
-            keyGenerator.init(spec)
-            return keyGenerator.generateKey()
+        try {
+            if (!keyStore.containsAlias(keyAlias)) {
+                val keyGenerator = KeyGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_AES,
+                    "AndroidKeyStore"
+                )
+                val spec = KeyGenParameterSpec.Builder(
+                    keyAlias,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build()
+                keyGenerator.init(spec)
+                return keyGenerator.generateKey()
+            }
+            val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry
+            if (entry != null) {
+                return entry.secretKey
+            }
+        } catch (_: Exception) {
+            // Key store entry corrupted or invalidated -> purge and regenerate
+            try { keyStore.deleteEntry(keyAlias) } catch (_: Exception) {}
         }
-        val entry = keyStore.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry
-            ?: throw IllegalStateException("Key alias exists but is not a SecretKeyEntry")
-        return entry.secretKey
+
+        // Regenerate clean key on recovery
+        val keyGenerator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            "AndroidKeyStore"
+        )
+        val spec = KeyGenParameterSpec.Builder(
+            keyAlias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256)
+            .build()
+        keyGenerator.init(spec)
+        return keyGenerator.generateKey()
     }
 
     override fun encrypt(plainText: String): String {
@@ -87,10 +125,43 @@ class AndroidKeyStoreCryptoProvider(
         val plainBytes = cipher.doFinal(cipherBytes)
         return String(plainBytes, StandardCharsets.UTF_8)
     }
+
+    override fun getSecurityLevel(): KeySecurityLevel {
+        return try {
+            val secretKey = getOrCreateKey()
+            val factory = SecretKeyFactory.getInstance(secretKey.algorithm, "AndroidKeyStore")
+            val keyInfo = factory.getKeySpec(secretKey, KeyInfo::class.java) as KeyInfo
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                when (keyInfo.securityLevel) {
+                    KeyProperties.SECURITY_LEVEL_STRONGBOX -> KeySecurityLevel.STRONGBOX_BACKED
+                    KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT -> KeySecurityLevel.TEE_BACKED
+                    else -> KeySecurityLevel.SOFTWARE_BACKED
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                if (keyInfo.isInsideSecureHardware) {
+                    KeySecurityLevel.HARDWARE_BACKED
+                } else {
+                    KeySecurityLevel.SOFTWARE_BACKED
+                }
+            }
+        } catch (_: Throwable) {
+            KeySecurityLevel.UNKNOWN
+        }
+    }
+
+    override fun invalidateKey() {
+        try {
+            if (keyStore.containsAlias(keyAlias)) {
+                keyStore.deleteEntry(keyAlias)
+            }
+        } catch (_: Exception) {}
+    }
 }
 
 class JvmAesGcmCryptoProvider(
-    private val secretKey: SecretKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+    private var secretKey: SecretKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
 ) : TokenCryptoProvider {
 
     override fun encrypt(plainText: String): String {
@@ -120,6 +191,15 @@ class JvmAesGcmCryptoProvider(
         val plainBytes = cipher.doFinal(cipherBytes)
         return String(plainBytes, StandardCharsets.UTF_8)
     }
+
+    override fun getSecurityLevel(): KeySecurityLevel {
+        return KeySecurityLevel.SOFTWARE_BACKED
+    }
+
+    override fun invalidateKey() {
+        // Regenerate a brand new random key to simulate key invalidation
+        secretKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+    }
 }
 
 object SecureTokenStorage {
@@ -132,7 +212,7 @@ object SecureTokenStorage {
     @Volatile
     var customPrefsForTesting: android.content.SharedPreferences? = null
 
-    private fun getProvider(): TokenCryptoProvider {
+    fun getProvider(): TokenCryptoProvider {
         val custom = customProviderForTesting
         if (custom != null) return custom
         return try {
@@ -163,7 +243,10 @@ object SecureTokenStorage {
             ?.getString(KEY_ENCRYPTED_TOKEN, null) ?: return null
         return try {
             getProvider().decrypt(encrypted)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // Authentication tag mismatch, corrupted payload, or key invalidation:
+            // Auto-recover cleanly by clearing corrupted token from storage
+            clearToken(context)
             null
         }
     }
@@ -176,5 +259,9 @@ object SecureTokenStorage {
 
     fun hasToken(context: Context?): Boolean {
         return !getToken(context).isNullOrBlank()
+    }
+
+    fun getEffectiveSecurityLevel(): KeySecurityLevel {
+        return getProvider().getSecurityLevel()
     }
 }
