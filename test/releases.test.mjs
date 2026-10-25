@@ -85,10 +85,11 @@ test('Release Catalog API & Manifest Tests', async (t) => {
     assert.equal(debugCatalog.channel, 'debug');
     assert.equal(debugCatalog.packageName, 'com.gatecse.companion.debug');
     assert.ok(Array.isArray(debugCatalog.releases), 'releases must be an array');
-    assert.equal(debugCatalog.releases.length >= 1, true, 'releases must contain at least baseline release');
+    assert.equal(debugCatalog.releases.length >= 2, true, 'releases must contain baseline and candidate');
 
-    const baseline = debugCatalog.releases[0];
-    assert.equal(baseline.versionCode, 2);
+    // Baseline v1.0.1
+    const baseline = debugCatalog.releases.find(r => r.versionCode === 2);
+    assert.ok(baseline, 'Baseline release v1.0.1 (code 2) must exist');
     assert.equal(baseline.versionName, '1.0.1');
     assert.equal(baseline.apkSizeBytes, 21040765);
     assert.equal(baseline.sha256, '3EBCE6420763E897B1DCC25A44FE286385D059C8587B76A5394A2798A140C40D');
@@ -96,6 +97,20 @@ test('Release Catalog API & Manifest Tests', async (t) => {
     assert.equal(baseline.compatibility.minSdk, 26);
     assert.equal(baseline.compatibility.targetSdk, 35);
     assert.equal(baseline.database.databaseVersion, 3);
+
+    // Forward Update Candidate v1.0.2
+    const candidate = debugCatalog.releases.find(r => r.versionCode === 3);
+    assert.ok(candidate, 'Candidate release v1.0.2 (code 3) must exist');
+    assert.equal(candidate.versionName, '1.0.2');
+    assert.equal(candidate.apkSizeBytes, 20892324);
+    assert.equal(candidate.sha256, '837AACEBF0708A0E2B995455D3D7573D46020220CD9BF56AE593C418F96793B7');
+    assert.equal(candidate.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
+    assert.equal(candidate.database.databaseVersion, 3);
+
+    // Recommended update
+    assert.ok(debugCatalog.recommendedUpdate, 'recommendedUpdate must be present');
+    assert.equal(debugCatalog.recommendedUpdate.versionCode, 3);
+    assert.equal(debugCatalog.recommendedUpdate.sha256, candidate.sha256);
   });
 
   // Test 2: Stable Catalog JSON Schema Validation
