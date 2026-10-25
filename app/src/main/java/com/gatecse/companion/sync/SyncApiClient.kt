@@ -19,6 +19,7 @@ class SyncApiClient(
         private const val PREFS_NAME = "gate_auth_prefs"
         private const val KEY_SESSION_TOKEN = "session_token"
         private const val KEY_USERNAME = "auth_username"
+        private const val KEY_PASSWORD = "auth_password"
         @Volatile
         private var inMemoryToken: String? = null
     }
@@ -51,11 +52,13 @@ class SyncApiClient(
 
             val prefs = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val username = prefs?.getString(KEY_USERNAME, "katurtusridhar") ?: "katurtusridhar"
+            val password = prefs?.getString(KEY_PASSWORD, "Sridhar@758") ?: "Sridhar@758"
 
             val body = JSONObject()
             body.put("grantType", "companion_client")
             body.put("clientKey", "gb_companion_secure_sync_2026_tok")
             body.put("username", username)
+            body.put("password", password)
 
             OutputStreamWriter(connection.outputStream, "UTF-8").use { writer ->
                 writer.write(body.toString())
