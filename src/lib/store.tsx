@@ -629,12 +629,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let completedBefore = 0;
       for (let i = 0; i < canonicalList.length; i++) {
         const t = canonicalList[i];
-        if (progress.get(t.id)?.isCompleted === true) {
+        const codeId = `${getCodeForSubject(t.subject)}_${t.curNum}`;
+        if (progress.get(t.id)?.isCompleted === true || progress.get(codeId)?.isCompleted === true) {
           completedBefore++;
         }
       }
 
-      const isThisSlotCompleted = progress.get(baseTask.id)?.isCompleted === true;
+      const codeSlotId = `${getCodeForSubject(baseTask.subject)}_${baseTask.curNum}`;
+      const isThisSlotCompleted =
+        progress.get(baseTask.id)?.isCompleted === true || progress.get(codeSlotId)?.isCompleted === true;
       if (isThisSlotCompleted) {
         const idx = Math.min(Math.max(0, completedBefore - 1), canonicalList.length - 1);
         const lecture = canonicalList[idx];
