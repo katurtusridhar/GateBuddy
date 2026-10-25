@@ -22,6 +22,29 @@ class SyncApiClient(
         private const val KEY_PASSWORD = "auth_password"
         @Volatile
         private var inMemoryToken: String? = null
+
+        fun getSavedUsername(context: Context): String {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_USERNAME, "") ?: ""
+        }
+
+        fun hasCredentials(context: Context): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val hasToken = !prefs.getString(KEY_SESSION_TOKEN, null).isNullOrBlank()
+            val hasUser = !prefs.getString(KEY_USERNAME, null).isNullOrBlank()
+            val hasPass = !prefs.getString(KEY_PASSWORD, null).isNullOrBlank()
+            return hasToken || (hasUser && hasPass)
+        }
+
+        fun saveCredentials(context: Context, username: String, pass: String) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_USERNAME, username.trim())
+                .putString(KEY_PASSWORD, pass.trim())
+                .remove(KEY_SESSION_TOKEN)
+                .apply()
+            inMemoryToken = null
+        }
     }
 
     private suspend fun getSessionToken(): String? = withContext(Dispatchers.IO) {
@@ -51,8 +74,13 @@ class SyncApiClient(
             connection.doOutput = true
 
             val prefs = context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val username = prefs?.getString(KEY_USERNAME, "katurtusridhar") ?: "katurtusridhar"
-            val password = prefs?.getString(KEY_PASSWORD, "Sridhar@758") ?: "Sridhar@758"
+            val username = prefs?.getString(KEY_USERNAME, null)?.trim()
+            val password = prefs?.getString(KEY_PASSWORD, null)?.trim()
+
+            if (username.isNullOrBlank() || password.isNullOrBlank()) {
+                android.util.Log.w("GateBuddySync", "Sync credentials not configured. Please configure in Settings.")
+                return@withContext null
+            }
 
             val body = JSONObject()
             body.put("grantType", "companion_client")

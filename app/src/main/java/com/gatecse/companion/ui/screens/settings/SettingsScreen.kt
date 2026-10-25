@@ -29,7 +29,9 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Widgets
@@ -64,11 +66,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gatecse.companion.data.ScheduleRepository
 import com.gatecse.companion.model.ThemeMode
 import com.gatecse.companion.model.UserSettingsEntity
+import com.gatecse.companion.sync.SyncApiClient
 import com.gatecse.companion.ui.components.CyberCard
 import com.gatecse.companion.ui.components.CyberPillBadge
 import com.gatecse.companion.ui.theme.GateTheme
@@ -97,6 +101,9 @@ fun SettingsScreen(
     var showImportReportDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
     var restoreJsonText by remember { mutableStateOf("") }
+    var showSyncAccountDialog by remember { mutableStateOf(false) }
+    var syncUsernameInput by remember { mutableStateOf(SyncApiClient.getSavedUsername(context)) }
+    var isSyncConfigured by remember { mutableStateOf(SyncApiClient.hasCredentials(context)) }
 
     val settings = userSettings ?: UserSettingsEntity()
 
@@ -459,7 +466,78 @@ fun SettingsScreen(
             }
         }
 
-        // 8. Software Updates & Version History
+        // 8. Companion Website Sync Account
+        item {
+            CyberCard(
+                borderSecondary = colors.cardBorder,
+                contentPadding = PaddingValues(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CyberPillBadge(text = "WEBSITE SYNCHRONIZATION", accentColor = colors.sky)
+                    val statusText = if (isSyncConfigured) "CONNECTED" else "NOT CONFIGURED"
+                    val statusColor = if (isSyncConfigured) colors.emerald else colors.amber
+                    CyberPillBadge(text = statusText, accentColor = statusColor)
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Companion Website Account",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.textPrimary
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (isSyncConfigured) "Account: ${if (syncUsernameInput.isNotBlank()) syncUsernameInput else "Configured"} — Android progress uploads securely to gate-buddy.vercel.app." else "Configure your website username and password to authenticate progress sync.",
+                    fontSize = 12.sp,
+                    color = colors.textSecondary
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { showSyncAccountDialog = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.cardElevated),
+                        border = BorderStroke(1.dp, colors.cardBorder),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Person, contentDescription = "Account", modifier = Modifier.size(16.dp), tint = colors.sky)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isSyncConfigured) "Credentials" else "Configure", fontSize = 12.sp, color = colors.textPrimary, fontWeight = FontWeight.Bold)
+                    }
+
+                    if (isSyncConfigured) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val res = repository.syncWithCloud()
+                                    if (res.success) {
+                                        Toast.makeText(context, "Cloud sync completed successfully!", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Sync attempt: ${res.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Sync, contentDescription = "Sync Now", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Sync Now", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 9. Software Updates & Version History
         item {
             CyberCard(
                 borderHighlight = colors.primary,
@@ -584,6 +662,81 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRestoreDialog = false }) {
+                    Text("Cancel", color = colors.textSecondary)
+                }
+            }
+        )
+    }
+
+    // Dialog: Companion Sync Credentials
+    if (showSyncAccountDialog) {
+        var userDialogText by remember { mutableStateOf(if (syncUsernameInput.isNotBlank()) syncUsernameInput else "katurtusridhar") }
+        var passDialogText by remember { mutableStateOf("") }
+        var inputError by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { showSyncAccountDialog = false },
+            title = {
+                Text("Companion Sync Credentials", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+            },
+            text = {
+                Column {
+                    Text(
+                        "Enter your website username and password to authenticate Android-to-Website progress synchronization. Credentials are stored securely in private device preferences.",
+                        fontSize = 12.sp,
+                        color = colors.textSecondary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = userDialogText,
+                        onValueChange = { userDialogText = it },
+                        label = { Text("Username") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = passDialogText,
+                        onValueChange = { passDialogText = it },
+                        label = { Text("Password") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                    if (inputError != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(inputError ?: "", fontSize = 11.sp, color = colors.rose)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleanUser = userDialogText.trim()
+                        val cleanPass = passDialogText.trim()
+                        if (cleanUser.isBlank() || cleanPass.isBlank()) {
+                            inputError = "Username and password cannot be empty."
+                            return@Button
+                        }
+                        SyncApiClient.saveCredentials(context, cleanUser, cleanPass)
+                        syncUsernameInput = cleanUser
+                        isSyncConfigured = true
+                        showSyncAccountDialog = false
+                        Toast.makeText(context, "Credentials saved securely.", Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            val res = repository.syncWithCloud()
+                            if (res.success) {
+                                Toast.makeText(context, "Initial sync verified!", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
+                ) {
+                    Text("Save & Connect")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSyncAccountDialog = false }) {
                     Text("Cancel", color = colors.textSecondary)
                 }
             }
