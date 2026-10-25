@@ -1,6 +1,8 @@
 // Server-side security and authentication utilities for GateBuddy
 // Compatible with both Node.js API routes and Next.js Edge Middleware
 
+import { getSupabaseServiceClient } from "./supabase/server";
+
 export const AUTH_COOKIE_NAME = "gatebuddy_auth";
 export const CLIENT_API_KEY = process.env.GATEBUDDY_CLIENT_KEY || "gb_companion_secure_sync_2026_tok";
 
@@ -74,10 +76,26 @@ export async function signSessionToken(username: string, maxAgeSeconds: number =
 const revokedTokenSignatures = new Map<string, number>();
 
 /**
- * Revokes an issued session token immediately on the server before its expiration date.
+ * Computes a SHA-256 cryptographic hex fingerprint.
+ * Used for session revocation to ensure raw tokens, passwords, and secrets are never stored.
  */
-export function revokeSessionToken(token: string | null | undefined): boolean {
-  if (!token || typeof token !== "string") return false;
+export async function hashSha256Hex(input: string): Promise<string> {
+  const enc = new TextEncoder();
+  const hash = await crypto.subtle.digest("SHA-256", enc.encode(input));
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Revokes an issued session token immediately on the server before its expiration date.
+ * Persists revocation into durable PostgreSQL (public.revoked_sessions) via cryptographic fingerprint.
+ */
+export async function revokeSessionToken(
+  token: string | null | undefined,
+  options?: { dbClient?: any }
+): Promise<{ success: boolean; durable: boolean; error?: string }> {
+  if (!token || typeof token !== "string") return { success: false, durable: false, error: "MISSING_OR_INVALID_TOKEN" };
   try {
     let decoded = "";
     if (typeof atob !== "undefined") {
@@ -87,37 +105,107 @@ export function revokeSessionToken(token: string | null | undefined): boolean {
       decoded = Buffer.from(token, "base64url").toString("utf-8");
     }
     const parts = decoded.split(":");
-    if (parts.length < 3) return false;
+    if (parts.length < 3) return { success: false, durable: false, error: "MALFORMED_TOKEN" };
+    const username = parts[0];
     const expiryStr = parts[1];
     const signature = parts[parts.length - 1];
     const expiry = parseInt(expiryStr, 10);
-    if (!signature) return false;
+    if (!signature) return { success: false, durable: false, error: "MISSING_SIGNATURE" };
+
+    const now = Date.now();
+    const effectiveExpiry = isNaN(expiry) ? now + 86400000 : expiry;
 
     // Prune expired entries to prevent unbounded memory growth
-    const now = Date.now();
     for (const [sig, exp] of revokedTokenSignatures.entries()) {
       if (now > exp) revokedTokenSignatures.delete(sig);
     }
 
-    revokedTokenSignatures.set(signature, isNaN(expiry) ? now + 86400000 : expiry);
-    return true;
-  } catch {
-    return false;
+    // 1. Fast in-memory cache
+    revokedTokenSignatures.set(signature, effectiveExpiry);
+
+    // 2. Durable PostgreSQL persistence via cryptographic fingerprint
+    const client = options?.dbClient ?? getSupabaseServiceClient();
+    if (client) {
+      const fingerprint = await hashSha256Hex(signature);
+      const { error } = await client
+        .from("revoked_sessions")
+        .upsert(
+          {
+            session_fingerprint: fingerprint,
+            username: username.toLowerCase(),
+            expires_at: new Date(effectiveExpiry).toISOString(),
+            revoked_at: new Date(now).toISOString(),
+          },
+          { onConflict: "session_fingerprint" }
+        );
+
+      if (error) {
+        return { success: false, durable: false, error: `Durable revocation failed: ${error.message}` };
+      }
+      return { success: true, durable: true };
+    }
+
+    return { success: true, durable: false };
+  } catch (err: any) {
+    return { success: false, durable: false, error: err?.message || "Revocation failed" };
   }
 }
 
 /**
  * Checks whether a token's cryptographic signature has been revoked.
+ * Evaluates both the fast in-memory cache and the durable PostgreSQL revocation table.
+ * If the durable revocation store cannot be reached when configured, returns status 503 (fail closed).
  */
-export function isTokenRevoked(signature: string): boolean {
-  if (!signature) return false;
+export async function isTokenRevoked(
+  signature: string,
+  options?: { dbClient?: any }
+): Promise<{ revoked: boolean; error?: string; status?: number }> {
+  if (!signature) return { revoked: false };
+
+  // 1. Check in-memory fast cache
   const expiry = revokedTokenSignatures.get(signature);
-  if (!expiry) return false;
-  if (Date.now() > expiry) {
-    revokedTokenSignatures.delete(signature);
-    return false;
+  if (expiry) {
+    if (Date.now() > expiry) {
+      revokedTokenSignatures.delete(signature);
+    } else {
+      return { revoked: true };
+    }
   }
-  return true;
+
+  // 2. Check durable PostgreSQL store
+  const client = options?.dbClient ?? getSupabaseServiceClient();
+  if (client) {
+    try {
+      const fingerprint = await hashSha256Hex(signature);
+      const { data, error } = await client
+        .from("revoked_sessions")
+        .select("session_fingerprint")
+        .eq("session_fingerprint", fingerprint)
+        .maybeSingle();
+
+      if (error) {
+        return {
+          revoked: false,
+          error: `Revocation store query failed: ${error.message}`,
+          status: 503,
+        };
+      }
+
+      if (data && data.session_fingerprint) {
+        // Cache locally for subsequent fast-path checks
+        revokedTokenSignatures.set(signature, Date.now() + 3600000);
+        return { revoked: true };
+      }
+    } catch (err: any) {
+      return {
+        revoked: false,
+        error: err?.message || "Revocation store connection failed",
+        status: 503,
+      };
+    }
+  }
+
+  return { revoked: false };
 }
 
 /**
@@ -129,14 +217,17 @@ export function clearRevokedTokens(): void {
 
 /**
  * Verifies the integrity, signature, and expiration of a session token.
- * Validates HMAC-SHA256 signature, expiry timestamp, and server-side revocation registry.
+ * Validates HMAC-SHA256 signature, expiry timestamp, and durable server-side revocation registry.
  */
-export async function verifySessionToken(token: string | undefined | null): Promise<{ valid: boolean; username?: string; error?: string }> {
-  if (!token || typeof token !== "string" || !token.trim()) return { valid: false, error: "MISSING_TOKEN" };
+export async function verifySessionToken(
+  token: string | undefined | null,
+  options?: { dbClient?: any }
+): Promise<{ valid: boolean; username?: string; error?: string; status?: number }> {
+  if (!token || typeof token !== "string" || !token.trim()) return { valid: false, error: "MISSING_TOKEN", status: 401 };
 
   // Reject legacy "authenticated" bypass token
   if (token.trim() === "authenticated") {
-    return { valid: false, error: "LEGACY_BYPASS_REJECTED" };
+    return { valid: false, error: "LEGACY_BYPASS_REJECTED", status: 401 };
   }
 
   try {
@@ -167,27 +258,34 @@ export async function verifySessionToken(token: string | undefined | null): Prom
       signature = sig;
       payloadToVerify = `${username}:${expiryStr}`;
     } else {
-      return { valid: false, error: "MALFORMED_TOKEN" };
+      return { valid: false, error: "MALFORMED_TOKEN", status: 401 };
     }
 
     const expiry = parseInt(expiryStr, 10);
     if (isNaN(expiry) || Date.now() > expiry) {
-      return { valid: false, error: "TOKEN_EXPIRED" };
+      return { valid: false, error: "TOKEN_EXPIRED", status: 401 };
     }
 
-    // Check server-side revocation registry
-    if (isTokenRevoked(signature)) {
-      return { valid: false, error: "TOKEN_REVOKED" };
-    }
-
+    // Step 1: Verify cryptographic signature first (cheap CPU verification before network lookup)
     const expectedHmac = await createHmac(payloadToVerify);
     if (signature !== expectedHmac) {
-      return { valid: false, error: "INVALID_SIGNATURE" };
+      return { valid: false, error: "INVALID_SIGNATURE", status: 401 };
+    }
+
+    // Step 2: Check server-side revocation registry (in-memory fast cache + durable PostgreSQL)
+    const revocation = await isTokenRevoked(signature, options);
+    if (revocation.status === 503) {
+      // Fail closed: Do not silently accept unverified tokens if revocation store is down
+      return { valid: false, error: "REVOCATION_CHECK_UNAVAILABLE", status: 503 };
+    }
+
+    if (revocation.revoked) {
+      return { valid: false, error: "TOKEN_REVOKED", status: 401 };
     }
 
     return { valid: true, username };
   } catch {
-    return { valid: false, error: "DECODE_ERROR" };
+    return { valid: false, error: "DECODE_ERROR", status: 401 };
   }
 }
 
@@ -197,15 +295,22 @@ export async function verifySessionToken(token: string | undefined | null): Prom
  * 1. Cryptographically signed Bearer session token (Android or API clients)
  * 2. Cryptographically signed 'gatebuddy_auth' session cookie (Web browsers)
  */
-export async function getAuthorizedUser(req: Request): Promise<{ authorized: boolean; username?: string }> {
+export async function getAuthorizedUser(
+  req: Request,
+  options?: { dbClient?: any }
+): Promise<{ authorized: boolean; username?: string; status?: number; error?: string }> {
   // 1. Check Bearer token in Authorization header
   const authHeader = req.headers.get("authorization");
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const bearerToken = authHeader.substring(7).trim();
-    const tokenResult = await verifySessionToken(bearerToken);
+    const tokenResult = await verifySessionToken(bearerToken, options);
     if (tokenResult.valid && tokenResult.username) {
       return { authorized: true, username: tokenResult.username };
     }
+    if (tokenResult.status === 503) {
+      return { authorized: false, status: 503, error: tokenResult.error };
+    }
+    return { authorized: false, status: 401, error: tokenResult.error };
   }
 
   // 2. Check signed web session cookie
@@ -214,20 +319,24 @@ export async function getAuthorizedUser(req: Request): Promise<{ authorized: boo
   const cookieVal = match ? match[1] : null;
 
   if (cookieVal) {
-    const verification = await verifySessionToken(cookieVal);
+    const verification = await verifySessionToken(cookieVal, options);
     if (verification.valid && verification.username) {
       return { authorized: true, username: verification.username };
     }
+    if (verification.status === 503) {
+      return { authorized: false, status: 503, error: verification.error };
+    }
+    return { authorized: false, status: 401, error: verification.error };
   }
 
-  return { authorized: false };
+  return { authorized: false, status: 401, error: "UNAUTHORIZED" };
 }
 
 /**
  * Checks if an incoming HTTP request is authorized.
  */
-export async function verifyRequestAuthorization(req: Request): Promise<boolean> {
-  const user = await getAuthorizedUser(req);
+export async function verifyRequestAuthorization(req: Request, options?: { dbClient?: any }): Promise<boolean> {
+  const user = await getAuthorizedUser(req, options);
   return user.authorized;
 }
 

@@ -44,6 +44,16 @@ export async function GET(req: NextRequest) {
   // Enforce user-scoped cryptographic authentication & API authorization
   const auth = await getAuthorizedUser(req);
   if (!auth.authorized || !auth.username) {
+    if (auth.status === 503) {
+      return NextResponse.json(
+        {
+          status: "unavailable",
+          code: "REVOCATION_CHECK_UNAVAILABLE",
+          message: "Session revocation service unavailable. Request rejected to prevent unauthorized access.",
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json(
       { status: "unauthorized", message: "User authorization required. Provide valid Bearer session token or auth cookie." },
       { status: 401 }
@@ -200,6 +210,16 @@ export async function POST(req: NextRequest) {
     // Enforce user-scoped cryptographic authentication & API authorization
     const auth = await getAuthorizedUser(req);
     if (!auth.authorized || !auth.username) {
+      if (auth.status === 503) {
+        return NextResponse.json(
+          {
+            status: "unavailable",
+            code: "REVOCATION_CHECK_UNAVAILABLE",
+            message: "Session revocation service unavailable. Request rejected to prevent unauthorized access.",
+          },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
         { status: "unauthorized", message: "User authorization required. Provide valid Bearer session token or auth cookie." },
         { status: 401 }

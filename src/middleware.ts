@@ -25,7 +25,17 @@ export async function middleware(request: NextRequest) {
   );
 
   // If unauthenticated and attempting to access any protected area, redirect to /login
+  // Fail closed if revocation database is unavailable
   if (isProtectedPath && !isAuthenticated) {
+    if (sessionCheck.status === 503) {
+      return new NextResponse(
+        JSON.stringify({
+          error: "REVOCATION_CHECK_UNAVAILABLE",
+          message: "Session verification service unavailable. Request rejected to prevent unauthorized access.",
+        }),
+        { status: 503, headers: { "content-type": "application/json" } }
+      );
+    }
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("from", pathname);
     return NextResponse.redirect(loginUrl);

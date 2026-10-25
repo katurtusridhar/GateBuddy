@@ -5,9 +5,10 @@ export async function GET(req: NextRequest) {
   const auth = await getAuthorizedUser(req);
 
   if (!auth.authorized || !auth.username) {
+    const status = auth.status === 503 ? 503 : 401;
     return NextResponse.json(
-      { success: false, authenticated: false, user: null },
-      { status: 401 }
+      { success: false, authenticated: false, user: null, error: auth.error || "UNAUTHORIZED" },
+      { status }
     );
   }
 

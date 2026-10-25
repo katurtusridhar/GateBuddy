@@ -75,6 +75,11 @@ export async function POST(req: NextRequest) {
         const tokenRes = await verifySessionToken(authHeader.substring(7).trim());
         if (tokenRes.valid && tokenRes.username) {
           authenticatedUsername = tokenRes.username;
+        } else if (tokenRes.status === 503) {
+          return NextResponse.json(
+            { success: false, error: "REVOCATION_CHECK_UNAVAILABLE", message: "Session revocation service unavailable." },
+            { status: 503 }
+          );
         }
       }
     }

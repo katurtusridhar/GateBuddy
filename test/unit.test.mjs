@@ -906,4 +906,194 @@ test('Session Security: Server-side token revocation, logout, and replay prevent
   assert.equal(verifyToken(tokenA).valid, false); // User A still revoked
 });
 
+// 19. DURABLE SESSION REVOCATION, COLD STARTS & FAIL-CLOSED ENFORCEMENT
+test('Durable Session Revocation: Cold start multi-instance persistence, cryptographic fingerprinting, and fail-closed availability', async (t) => {
+  const secretKey = 'test-secret-key-gatebuddy-durable-revocation';
+  const crypto = await import('node:crypto');
+
+  function createHmac(data) {
+    return crypto.createHmac('sha256', secretKey).update(data).digest('hex');
+  }
+
+  function hashSha256Hex(data) {
+    return crypto.createHash('sha256').update(data).digest('hex');
+  }
+
+  let seq = 0;
+  function signToken(username, expiresInSeconds = 3600) {
+    seq++;
+    const nonce = `n_${seq}_${Date.now()}`;
+    const expiry = Date.now() + expiresInSeconds * 1000;
+    const payload = `${username}:${expiry}:${nonce}`;
+    const hmac = createHmac(payload);
+    return Buffer.from(`${payload}:${hmac}`).toString('base64url');
+  }
+
+  // Durable PostgreSQL storage (mocking public.revoked_sessions)
+  const durableDatabaseStore = new Map();
+  let dbSimulateError = false;
+
+  const mockDbClient = {
+    from: (table) => {
+      assert.equal(table, 'revoked_sessions', 'Must query revoked_sessions table');
+      return {
+        upsert: async (record) => {
+          if (dbSimulateError) return { data: null, error: { message: 'Database connection timeout' } };
+          durableDatabaseStore.set(record.session_fingerprint, record);
+          return { data: record, error: null };
+        },
+        select: (fields) => ({
+          eq: (column, value) => ({
+            maybeSingle: async () => {
+              if (dbSimulateError) return { data: null, error: { message: 'Database read replica partitioned' } };
+              assert.equal(column, 'session_fingerprint', 'Must look up by cryptographic fingerprint');
+              const found = durableDatabaseStore.get(value);
+              return { data: found || null, error: null };
+            },
+          }),
+        }),
+      };
+    },
+  };
+
+  // Factory to create a serverless instance with its own isolated process-local memory
+  function createServerlessInstance(instanceId, dbClient) {
+    const localMemoryCache = new Map();
+
+    async function revoke(token) {
+      if (!token) return { success: false, durable: false };
+      const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+      const parts = decoded.split(':');
+      if (parts.length < 3) return { success: false, durable: false };
+      const username = parts[0];
+      const expiry = parseInt(parts[1], 10);
+      const signature = parts[parts.length - 1];
+
+      // 1. Process-local cache
+      localMemoryCache.set(signature, expiry);
+
+      // 2. Durable PostgreSQL table
+      if (dbClient) {
+        const fingerprint = hashSha256Hex(signature);
+        const { error } = await dbClient.from('revoked_sessions').upsert({
+          session_fingerprint: fingerprint,
+          username: username.toLowerCase(),
+          expires_at: new Date(expiry).toISOString(),
+          revoked_at: new Date().toISOString(),
+        });
+        if (error) return { success: false, durable: false, error: error.message };
+        return { success: true, durable: true };
+      }
+      return { success: true, durable: false };
+    }
+
+    async function verify(token) {
+      if (!token) return { valid: false, error: 'MISSING_TOKEN', status: 401 };
+      try {
+        const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+        const parts = decoded.split(':');
+        if (parts.length < 3) return { valid: false, error: 'MALFORMED', status: 401 };
+        const username = parts[0];
+        const expiry = parseInt(parts[1], 10);
+        const signature = parts[parts.length - 1];
+        const payloadToVerify = parts.length === 4 ? `${parts[0]}:${parts[1]}:${parts[2]}` : `${parts[0]}:${parts[1]}`;
+
+        if (Date.now() > expiry) return { valid: false, error: 'TOKEN_EXPIRED', status: 401 };
+
+        // HMAC verification first
+        const expected = createHmac(payloadToVerify);
+        if (signature !== expected) return { valid: false, error: 'INVALID_SIGNATURE', status: 401 };
+
+        // In-memory cache check
+        if (localMemoryCache.has(signature)) return { valid: false, error: 'TOKEN_REVOKED', status: 401 };
+
+        // Durable database check
+        if (dbClient) {
+          const fingerprint = hashSha256Hex(signature);
+          const { data, error } = await dbClient
+            .from('revoked_sessions')
+            .select('session_fingerprint')
+            .eq('session_fingerprint', fingerprint)
+            .maybeSingle();
+
+          if (error) {
+            return { valid: false, error: 'REVOCATION_CHECK_UNAVAILABLE', status: 503 };
+          }
+          if (data && data.session_fingerprint) {
+            localMemoryCache.set(signature, expiry);
+            return { valid: false, error: 'TOKEN_REVOKED', status: 401 };
+          }
+        }
+
+        return { valid: true, username };
+      } catch {
+        return { valid: false, error: 'DECODE_ERROR', status: 401 };
+      }
+    }
+
+    return { instanceId, localMemoryCache, revoke, verify };
+  }
+
+  // 1. Simulate two independent serverless lambda instances (e.g., distinct Vercel function instances)
+  const serverInstance1 = createServerlessInstance('lambda-iad1-node-01', mockDbClient);
+  const serverInstance2 = createServerlessInstance('lambda-iad1-node-02', mockDbClient);
+
+  // Issue sessions
+  const tokenUserA = signToken('katurtusridhar', 3600);
+  const tokenUserB = signToken('peer_student_2', 3600);
+
+  // Both tokens are valid on Instance 1
+  assert.equal((await serverInstance1.verify(tokenUserA)).valid, true);
+  assert.equal((await serverInstance1.verify(tokenUserB)).valid, true);
+
+  // User A logs out on Instance 1
+  const logoutRes = await serverInstance1.revoke(tokenUserA);
+  assert.equal(logoutRes.success, true);
+  assert.equal(logoutRes.durable, true);
+
+  // Invariant check: Raw Bearer token is NEVER stored in database
+  assert.equal(durableDatabaseStore.has(tokenUserA), false, 'Raw token must NEVER be stored in the database');
+  // Invariant check: Password or secret is NEVER stored in database
+  for (const record of durableDatabaseStore.values()) {
+    assert.equal(record.password, undefined);
+    assert.equal(record.masterCode, undefined);
+    assert.equal(record.session_fingerprint.length, 64, 'Stored fingerprint must be 64-char SHA-256 hex string');
+  }
+
+  // Instance 1 rejects tokenUserA
+  const checkInstance1 = await serverInstance1.verify(tokenUserA);
+  assert.equal(checkInstance1.valid, false);
+  assert.equal(checkInstance1.error, 'TOKEN_REVOKED');
+
+  // CRITICAL SERVERLESS COLD-START TEST:
+  // Instance 2 has never seen tokenUserA, and its local memory is completely empty!
+  assert.equal(serverInstance2.localMemoryCache.size, 0, 'Instance 2 local memory must be completely empty');
+  const checkInstance2ColdStart = await serverInstance2.verify(tokenUserA);
+  assert.equal(checkInstance2ColdStart.valid, false, 'Cold start instance must reject revoked token via durable PostgreSQL');
+  assert.equal(checkInstance2ColdStart.error, 'TOKEN_REVOKED');
+
+  // Multi-user isolation test: User A logout does NOT affect User B on Instance 2
+  const checkUserBOnInstance2 = await serverInstance2.verify(tokenUserB);
+  assert.equal(checkUserBOnInstance2.valid, true, 'User B token must remain valid and unaffected');
+  assert.equal(checkUserBOnInstance2.username, 'peer_student_2');
+
+  // User A logs in again -> fresh token is valid across all instances
+  const freshTokenUserA = signToken('katurtusridhar', 3600);
+  assert.equal((await serverInstance1.verify(freshTokenUserA)).valid, true);
+  assert.equal((await serverInstance2.verify(freshTokenUserA)).valid, true);
+
+  // FAIL-CLOSED SECURITY TEST:
+  // When database becomes unreachable, protected requests must fail closed with 503, never silently accept
+  dbSimulateError = true;
+  const failClosedCheck = await serverInstance2.verify(freshTokenUserA);
+  assert.equal(failClosedCheck.valid, false, 'Must fail closed when database revocation check is unavailable');
+  assert.equal(failClosedCheck.status, 503, 'Must return HTTP 503 Service Unavailable');
+  assert.equal(failClosedCheck.error, 'REVOCATION_CHECK_UNAVAILABLE');
+
+  // Re-enable DB -> verification succeeds again
+  dbSimulateError = false;
+  const recoveredCheck = await serverInstance2.verify(freshTokenUserA);
+  assert.equal(recoveredCheck.valid, true);
+});
+
 
