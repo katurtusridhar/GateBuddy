@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import {
   getAuthorizedUser,
@@ -68,7 +67,7 @@ export async function GET(req: NextRequest) {
 
   let maxDbTimestamp = 0;
   const dbErrors: any[] = [];
-  const dbClient = getSupabaseServiceClient() || (isSupabaseConfigured ? supabase : null);
+  const dbClient = getSupabaseServiceClient();
   const isDbActive = Boolean(dbClient);
 
   // If Supabase is configured, fetch persistent records from PostgreSQL filtered by verified user identity
@@ -275,7 +274,7 @@ export async function POST(req: NextRequest) {
     const mutationTimestamp = Math.max(Date.now(), baseTimestamp + 1);
     globalServerVersion = mutationTimestamp;
 
-    const dbClient = getSupabaseServiceClient() || (isSupabaseConfigured ? supabase : null);
+    const dbClient = getSupabaseServiceClient();
     const isDbActive = Boolean(dbClient);
     let resolvedUserUuid: string | null = null;
 
