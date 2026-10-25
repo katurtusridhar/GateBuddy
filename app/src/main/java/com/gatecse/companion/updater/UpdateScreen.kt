@@ -80,6 +80,7 @@ fun UpdateScreen(
     val colors = GateTheme.colors
     val uiState by viewModel.uiState.collectAsState()
     val catalog by viewModel.catalog.collectAsState()
+    val confirmationRelease by viewModel.selectedReleaseForConfirmation.collectAsState()
 
     var showPermissionDialog by remember { mutableStateOf(false) }
     var pendingInstallApk by remember { mutableStateOf<File?>(null) }
@@ -212,9 +213,12 @@ fun UpdateScreen(
                 }
             } else {
                 items(releases) { release ->
-                    ReleaseHistoryItem(
+                    val actionState = viewModel.evaluateReleaseAction(release)
+                    VersionManagerReleaseItem(
                         release = release,
-                        isCurrentInstalled = release.versionCode.toLong() == viewModel.installedVersionCode
+                        actionState = actionState,
+                        installedVersionCode = viewModel.installedVersionCode,
+                        onRequestInstall = { r -> viewModel.requestReleaseInstallation(r) }
                     )
                 }
             }
@@ -251,6 +255,17 @@ fun UpdateScreen(
                     Text("Cancel", color = colors.textSecondary)
                 }
             }
+        )
+    }
+
+    confirmationRelease?.let { release ->
+        val actionState = viewModel.evaluateReleaseAction(release)
+        VersionConfirmationDialog(
+            release = release,
+            actionState = actionState,
+            currentBuild = viewModel.installedVersionCode,
+            onConfirm = { viewModel.confirmReleaseInstallation() },
+            onDismiss = { viewModel.dismissConfirmation() }
         )
     }
 }
@@ -602,9 +617,11 @@ fun UpdateStatusCard(
 }
 
 @Composable
-fun ReleaseHistoryItem(
+fun VersionManagerReleaseItem(
     release: ReleaseEntry,
-    isCurrentInstalled: Boolean
+    actionState: ReleaseActionState,
+    installedVersionCode: Long,
+    onRequestInstall: (ReleaseEntry) -> Unit
 ) {
     val colors = GateTheme.colors
     var expanded by remember { mutableStateOf(false) }
@@ -615,7 +632,12 @@ fun ReleaseHistoryItem(
         colors = CardDefaults.cardColors(containerColor = colors.card),
         border = BorderStroke(
             1.dp,
-            if (isCurrentInstalled) colors.primary.copy(alpha = 0.5f) else colors.cardBorder
+            when (actionState) {
+                is ReleaseActionState.Current -> colors.primary.copy(alpha = 0.6f)
+                is ReleaseActionState.CanRestore -> colors.amber.copy(alpha = 0.5f)
+                is ReleaseActionState.CanUpdate -> colors.emerald.copy(alpha = 0.5f)
+                else -> colors.cardBorder
+            }
         )
     ) {
         Column(
@@ -623,47 +645,190 @@ fun ReleaseHistoryItem(
                 .clickable { expanded = !expanded }
                 .padding(14.dp)
         ) {
+            // Header Row: Version and Badges
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "v${release.behaviorVersion.ifEmpty { release.installVersionName }}",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = colors.textPrimary
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Build ${release.installVersionCode}",
+                            fontSize = 12.sp,
+                            color = colors.textSecondary
+                        )
+                    }
+                    if (release.releaseType.equals("rollback", ignoreCase = true)) {
+                        Text(
+                            text = "Restores v${release.restoresBehaviorVersion ?: release.behaviorVersion} behavior",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.amber
+                        )
+                    }
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "v${release.versionName}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = colors.textPrimary
+                    when (actionState) {
+                        is ReleaseActionState.Current -> {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = colors.primary.copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = "CURRENT",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        is ReleaseActionState.CanRestore -> {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = colors.amber.copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = "ROLLBACK",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.amber,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        is ReleaseActionState.CanUpdate -> {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = colors.emerald.copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = "NEWER",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.emerald,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        is ReleaseActionState.HistoricalBuildRequired -> {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = colors.surface
+                            ) {
+                                Text(
+                                    text = "HISTORICAL",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = colors.textSecondary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        is ReleaseActionState.Incompatible -> {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = colors.rose.copy(alpha = 0.2f)
+                            ) {
+                                Text(
+                                    text = "INCOMPATIBLE",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.rose,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = colors.textSecondary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                }
+            }
+
+            // Action Button / Status
+            Spacer(modifier = Modifier.height(10.dp))
+            when (actionState) {
+                is ReleaseActionState.Current -> {
                     Text(
-                        text = "Build ${release.versionCode}",
+                        text = "• Currently installed and active on this device.",
                         fontSize = 12.sp,
                         color = colors.textSecondary
                     )
-                    if (isCurrentInstalled) {
+                }
+                is ReleaseActionState.CanUpdate -> {
+                    Button(
+                        onClick = { onRequestInstall(release) },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.emerald),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = colors.primary.copy(alpha = 0.2f)
-                        ) {
-                            Text(
-                                text = "CURRENT",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = colors.primary,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
+                        Text("Update to v${release.behaviorVersion} (Build ${release.installVersionCode})", fontWeight = FontWeight.Bold)
                     }
                 }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    tint = colors.textSecondary
-                )
+                is ReleaseActionState.CanRestore -> {
+                    Button(
+                        onClick = { onRequestInstall(release) },
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.amber),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Restore v${actionState.targetBehaviorVersion} (Build ${release.installVersionCode})", fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+                }
+                is ReleaseActionState.HistoricalBuildRequired -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(colors.surface.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Historical Build ${release.installVersionCode}. Direct downgrade is blocked by Android. Use a signed Restore build to run this version.",
+                            fontSize = 11.sp,
+                            color = colors.textSecondary
+                        )
+                    }
+                }
+                is ReleaseActionState.Incompatible -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(colors.rose.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = colors.rose, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Unavailable — Compatibility Check Failed: ${actionState.reason}",
+                            fontSize = 11.sp,
+                            color = colors.rose
+                        )
+                    }
+                }
             }
 
+            // Expandable details
             AnimatedVisibility(visible = expanded) {
                 Column(modifier = Modifier.padding(top = 10.dp)) {
                     if (release.changelog.summary.isNotBlank()) {
@@ -683,14 +848,145 @@ fun ReleaseHistoryItem(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Database Version: ${release.database.databaseVersion} | Min SDK: ${release.compatibility.minSdk}",
+                        text = "Release Date: ${release.releaseDate} | Type: ${release.releaseType.uppercase()}",
                         fontSize = 10.sp,
-                        color = colors.textSecondary.copy(alpha = 0.7f)
+                        color = colors.textSecondary.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = "Database Version: ${release.database.databaseVersion} (Min: ${release.database.minSupportedDatabaseVersion}) | Min Android SDK: ${release.compatibility.minSdk}",
+                        fontSize = 10.sp,
+                        color = colors.textSecondary.copy(alpha = 0.8f)
+                    )
+                    val sizeMb = "%.2f".format(java.util.Locale.US, release.apkSizeBytes / (1024.0 * 1024.0))
+                    Text(
+                        text = "APK Size: $sizeMb MB | Verification: ${release.verificationStatus.uppercase()}",
+                        fontSize = 10.sp,
+                        color = colors.textSecondary.copy(alpha = 0.8f)
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+fun VersionConfirmationDialog(
+    release: ReleaseEntry,
+    actionState: ReleaseActionState,
+    currentBuild: Long,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = GateTheme.colors
+    val isRollback = release.releaseType.equals("rollback", ignoreCase = true)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = if (isRollback) Icons.Default.Refresh else Icons.Default.SystemUpdate,
+                contentDescription = null,
+                tint = if (isRollback) colors.amber else colors.emerald
+            )
+        },
+        title = {
+            Text(
+                text = if (isRollback) "Confirm Behavior Rollback" else "Confirm Forward Update",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = if (isRollback) {
+                        "You are requesting to restore behavior version v${release.restoresBehaviorVersion ?: release.behaviorVersion}."
+                    } else {
+                        "You are requesting to update to behavior version v${release.behaviorVersion}."
+                    },
+                    fontSize = 13.sp,
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.surface),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Target Package: Build ${release.installVersionCode} (${release.installVersionName})",
+                            fontSize = 12.sp,
+                            color = colors.textSecondary
+                        )
+                        Text(
+                            text = "Current Package: Build $currentBuild",
+                            fontSize = 12.sp,
+                            color = colors.textSecondary
+                        )
+                        Text(
+                            text = "Android Installation: Forward upgrade (${release.installVersionCode} > $currentBuild), accepted by PackageInstaller.",
+                            fontSize = 12.sp,
+                            color = colors.emerald,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.surface),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = colors.emerald, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Database Safety: 100% Data Preserved",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.emerald
+                            )
+                        }
+                        Text(
+                            text = "Compatible with Room Database Schema Version 3. All 8 entities (schedule tasks, DPP records, progress, achievements, settings) will be retained with zero data loss.",
+                            fontSize = 11.sp,
+                            color = colors.textSecondary
+                        )
+                    }
+                }
+
+                if (release.changelog.summary.isNotBlank()) {
+                    Text(
+                        text = "Summary: ${release.changelog.summary}",
+                        fontSize = 12.sp,
+                        color = colors.textSecondary
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRollback) colors.amber else colors.emerald
+                )
+            ) {
+                Text(
+                    text = if (isRollback) "Proceed with Restore" else "Proceed with Update",
+                    fontWeight = FontWeight.Bold,
+                    color = if (isRollback) Color.Black else Color.White
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

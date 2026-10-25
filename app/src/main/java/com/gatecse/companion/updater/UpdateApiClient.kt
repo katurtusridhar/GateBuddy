@@ -191,18 +191,34 @@ class UpdateApiClient(
             requiresSchemaDowngrade = dbObj.optBoolean("requiresSchemaDowngrade", false)
         )
 
+        val rawVersionCode = if (obj.has("installVersionCode")) obj.getInt("installVersionCode") else obj.getInt("versionCode")
+        val rawVersionName = if (obj.has("installVersionName")) obj.getString("installVersionName") else obj.getString("versionName")
+        val behaviorVersion = obj.optString("behaviorVersion", rawVersionName)
+        val releaseId = obj.optString("releaseId", "rel-$rawVersionName-$rawVersionCode")
+        val releaseType = obj.optString("releaseType", "standard")
+        val restoresBehaviorVersion = if (obj.has("restoresBehaviorVersion") && !obj.isNull("restoresBehaviorVersion")) {
+            obj.getString("restoresBehaviorVersion")
+        } else {
+            null
+        }
+        val verificationStatus = obj.optString("verificationStatus", "verified")
+
         return ReleaseEntry(
-            versionCode = obj.getInt("versionCode"),
-            versionName = obj.getString("versionName"),
+            releaseId = releaseId,
+            behaviorVersion = behaviorVersion,
+            installVersionCode = rawVersionCode,
+            installVersionName = rawVersionName,
+            releaseType = releaseType,
+            restoresBehaviorVersion = restoresBehaviorVersion,
             releaseDate = obj.optString("releaseDate", ""),
-            releaseType = obj.optString("releaseType", "standard"),
             changelog = changelog,
             apkUrl = obj.getString("apkUrl"),
             apkSizeBytes = obj.getLong("apkSizeBytes"),
             sha256 = obj.getString("sha256"),
             signingCertificate = cert,
             compatibility = compat,
-            database = db
+            database = db,
+            verificationStatus = verificationStatus
         )
     }
 }

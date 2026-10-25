@@ -25,18 +25,34 @@ data class ReleaseDatabase(
 )
 
 data class ReleaseEntry(
-    val versionCode: Int,
-    val versionName: String,
-    val releaseDate: String,
-    val releaseType: String,
+    val releaseId: String = "",
+    val behaviorVersion: String = "",
+    val installVersionCode: Int,
+    val installVersionName: String,
+    val releaseType: String = "standard", // "standard" or "rollback"
+    val restoresBehaviorVersion: String? = null,
+    val releaseDate: String = "",
     val changelog: ReleaseChangelog,
     val apkUrl: String,
     val apkSizeBytes: Long,
     val sha256: String,
     val signingCertificate: ReleaseSigningCertificate,
     val compatibility: ReleaseCompatibility,
-    val database: ReleaseDatabase
-)
+    val database: ReleaseDatabase,
+    val verificationStatus: String = "verified" // "verified" or "unverified"
+) {
+    // Backwards compatibility aliases
+    val versionCode: Int get() = installVersionCode
+    val versionName: String get() = installVersionName
+}
+
+sealed interface ReleaseActionState {
+    object Current : ReleaseActionState
+    data class CanUpdate(val release: ReleaseEntry) : ReleaseActionState
+    data class CanRestore(val release: ReleaseEntry, val targetBehaviorVersion: String) : ReleaseActionState
+    data class Incompatible(val reason: String) : ReleaseActionState
+    data class HistoricalBuildRequired(val reason: String, val historicalBehaviorVersion: String) : ReleaseActionState
+}
 
 data class ReleaseCatalog(
     val manifestVersion: Int,

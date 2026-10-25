@@ -25,10 +25,12 @@ class UpdateSystemTest {
         sha256: String = "3ebce6420763e897b1dcc25a44fe286385d059c8587b76a5394a2798a140c40d"
     ): ReleaseEntry {
         return ReleaseEntry(
-            versionCode = versionCode,
-            versionName = versionName,
-            releaseDate = "2026-10-25T10:40:00Z",
+            releaseId = "rel-$versionName-$versionCode",
+            behaviorVersion = versionName,
+            installVersionCode = versionCode,
+            installVersionName = versionName,
             releaseType = releaseType,
+            releaseDate = "2026-10-25T10:40:00Z",
             changelog = ReleaseChangelog(
                 summary = "Test summary",
                 highlights = listOf("Highlight 1", "Highlight 2")
@@ -282,5 +284,158 @@ class UpdateSystemTest {
                 computedHash.lowercase()
             )
         }
+
+        val apkRollback5 = java.io.File("C:/Users/sridh/Downloads/GateBuddy-v1.0.2-r1.apk")
+        if (apkRollback5.exists()) {
+            assertEquals("Rollback v1.0.2-r1 size must match exact build output", 20908708L, apkRollback5.length())
+            val md = MessageDigest.getInstance("SHA-256")
+            apkRollback5.inputStream().use { stream ->
+                val buffer = ByteArray(65536)
+                var read: Int
+                while (stream.read(buffer).also { read = it } != -1) {
+                    md.update(buffer, 0, read)
+                }
+            }
+            val computedHash = md.digest().joinToString("") { "%02x".format(it) }
+            assertEquals(
+                "Rollback v1.0.2-r1 SHA-256 must match exactly",
+                "b231b7938a18aaf6e308160792c2e5677cf2ee084cc5da1de97113699448d24d",
+                computedHash.lowercase()
+            )
+        }
+
+        val apkForward6 = java.io.File("C:/Users/sridh/Downloads/GateBuddy-v1.0.4.apk")
+        if (apkForward6.exists()) {
+            assertEquals("Forward v1.0.4 size must match exact build output", 20908712L, apkForward6.length())
+            val md = MessageDigest.getInstance("SHA-256")
+            apkForward6.inputStream().use { stream ->
+                val buffer = ByteArray(65536)
+                var read: Int
+                while (stream.read(buffer).also { read = it } != -1) {
+                    md.update(buffer, 0, read)
+                }
+            }
+            val computedHash = md.digest().joinToString("") { "%02x".format(it) }
+            assertEquals(
+                "Forward v1.0.4 SHA-256 must match exactly",
+                "b880a0b7cc5a2d6a9bbf835143578f146a1cab750f83bac26641cca07504a35d",
+                computedHash.lowercase()
+            )
+        }
+    }
+
+    // Version Manager logic tests
+    private fun evaluateAction(
+        release: ReleaseEntry,
+        installedCode: Long,
+        currentDbVersion: Int = 3,
+        deviceSdk: Int = 35
+    ): com.gatecse.companion.updater.ReleaseActionState {
+        val targetCode = release.installVersionCode.toLong()
+
+        if (targetCode == installedCode) {
+            return com.gatecse.companion.updater.ReleaseActionState.Current
+        }
+
+        if (targetCode < installedCode) {
+            return com.gatecse.companion.updater.ReleaseActionState.HistoricalBuildRequired(
+                reason = "Direct in-place install blocked by Android (Build ${release.installVersionCode} < current Build $installedCode). Use a Restore build to run this version.",
+                historicalBehaviorVersion = release.behaviorVersion.ifEmpty { release.installVersionName }
+            )
+        }
+
+        if (release.database.requiresSchemaDowngrade ||
+            release.database.minSupportedDatabaseVersion > currentDbVersion ||
+            release.database.databaseVersion < currentDbVersion
+        ) {
+            return com.gatecse.companion.updater.ReleaseActionState.Incompatible(
+                "Database schema mismatch: requires schema downgrade or unsupported database version."
+            )
+        }
+
+        if (deviceSdk < release.compatibility.minSdk) {
+            return com.gatecse.companion.updater.ReleaseActionState.Incompatible(
+                "Requires Android API ${release.compatibility.minSdk}+ (device is API $deviceSdk)."
+            )
+        }
+
+        return if (release.releaseType.equals("rollback", ignoreCase = true)) {
+            val targetBehavior = release.restoresBehaviorVersion ?: release.behaviorVersion.ifEmpty { release.installVersionName }
+            com.gatecse.companion.updater.ReleaseActionState.CanRestore(release, targetBehavior)
+        } else {
+            com.gatecse.companion.updater.ReleaseActionState.CanUpdate(release)
+        }
+    }
+
+    @Test
+    fun testVersionManagerActionEvaluationCurrentBuild() {
+        val installedCode = 4L
+        val rel103 = createSampleRelease(versionCode = 4, versionName = "1.0.3", releaseType = "standard")
+        val action = evaluateAction(rel103, installedCode)
+        assertTrue("Matching build must be identified as Current", action is com.gatecse.companion.updater.ReleaseActionState.Current)
+    }
+
+    @Test
+    fun testVersionManagerActionEvaluationForwardUpdate() {
+        val installedCode = 4L
+        val rel104 = createSampleRelease(versionCode = 6, versionName = "1.0.4", releaseType = "standard")
+        val action = evaluateAction(rel104, installedCode)
+        assertTrue("Higher standard build must be identified as CanUpdate", action is com.gatecse.companion.updater.ReleaseActionState.CanUpdate)
+    }
+
+    @Test
+    fun testVersionManagerActionEvaluationRollbackCandidate() {
+        val installedCode = 4L
+        val relRollback = ReleaseEntry(
+            releaseId = "rel-1.0.2-r1-b5",
+            behaviorVersion = "1.0.2",
+            installVersionCode = 5,
+            installVersionName = "1.0.2-r1",
+            releaseType = "rollback",
+            restoresBehaviorVersion = "1.0.2",
+            releaseDate = "2026-10-25T12:35:00Z",
+            changelog = ReleaseChangelog("Rollback summary", listOf("Highlight 1")),
+            apkUrl = "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.2-r1.apk",
+            apkSizeBytes = 20908708L,
+            sha256 = "b231b7938a18aaf6e308160792c2e5677cf2ee084cc5da1de97113699448d24d",
+            signingCertificate = ReleaseSigningCertificate("78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73"),
+            compatibility = ReleaseCompatibility(26, 35, listOf("arm64-v8a")),
+            database = ReleaseDatabase(3, 3, false)
+        )
+        val action = evaluateAction(relRollback, installedCode)
+        assertTrue("Rollback release with higher build must be identified as CanRestore", action is com.gatecse.companion.updater.ReleaseActionState.CanRestore)
+        assertEquals("1.0.2", (action as com.gatecse.companion.updater.ReleaseActionState.CanRestore).targetBehaviorVersion)
+    }
+
+    @Test
+    fun testVersionManagerActionEvaluationHistoricalLowerBuildRequiresRestore() {
+        val installedCode = 4L // Currently on v1.0.3 (Build 4)
+        val historical102 = createSampleRelease(versionCode = 3, versionName = "1.0.2", releaseType = "standard")
+        val action = evaluateAction(historical102, installedCode)
+        assertTrue(
+            "Historical lower versionCode must be blocked with HistoricalBuildRequired",
+            action is com.gatecse.companion.updater.ReleaseActionState.HistoricalBuildRequired
+        )
+    }
+
+    @Test
+    fun testVersionManagerActionEvaluationDatabaseSchemaMismatchIncompatible() {
+        val installedCode = 4L
+        val incompatibleDbRelease = ReleaseEntry(
+            releaseId = "rel-bad-db",
+            behaviorVersion = "2.0.0",
+            installVersionCode = 7,
+            installVersionName = "2.0.0",
+            releaseType = "standard",
+            changelog = ReleaseChangelog("Incompatible DB", listOf()),
+            apkUrl = "https://example.com/bad.apk",
+            apkSizeBytes = 20000000L,
+            sha256 = "dummy",
+            signingCertificate = ReleaseSigningCertificate("78:49:6C:7B..."),
+            compatibility = ReleaseCompatibility(26, 35, listOf("arm64-v8a")),
+            database = ReleaseDatabase(databaseVersion = 4, minSupportedDatabaseVersion = 4, requiresSchemaDowngrade = true)
+        )
+        val action = evaluateAction(incompatibleDbRelease, installedCode, currentDbVersion = 3)
+        assertTrue("Incompatible database requirements must be marked Incompatible", action is com.gatecse.companion.updater.ReleaseActionState.Incompatible)
     }
 }

@@ -22,6 +22,9 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     private val _catalog = MutableStateFlow<ReleaseCatalog?>(null)
     val catalog: StateFlow<ReleaseCatalog?> = _catalog.asStateFlow()
 
+    private val _selectedReleaseForConfirmation = MutableStateFlow<ReleaseEntry?>(null)
+    val selectedReleaseForConfirmation: StateFlow<ReleaseEntry?> = _selectedReleaseForConfirmation.asStateFlow()
+
     private var downloadJob: Job? = null
 
     val installedVersionCode: Long
@@ -32,6 +35,65 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     val activeChannel: String
         get() = apiClient.getActiveChannel()
+
+    companion object {
+        const val CURRENT_DATABASE_VERSION = 3
+    }
+
+    fun evaluateReleaseAction(release: ReleaseEntry): ReleaseActionState {
+        val currentCode = installedVersionCode
+        val targetCode = release.installVersionCode.toLong()
+
+        if (targetCode == currentCode) {
+            return ReleaseActionState.Current
+        }
+
+        if (targetCode < currentCode) {
+            return ReleaseActionState.HistoricalBuildRequired(
+                reason = "Direct in-place install blocked by Android (Build ${release.installVersionCode} < current Build $currentCode). Use a Restore build to run this version.",
+                historicalBehaviorVersion = release.behaviorVersion.ifEmpty { release.installVersionName }
+            )
+        }
+
+        // Target code is greater than current code (Forward install supported by Android)
+        // 1. Check database schema compatibility
+        if (release.database.requiresSchemaDowngrade ||
+            release.database.minSupportedDatabaseVersion > CURRENT_DATABASE_VERSION ||
+            release.database.databaseVersion < CURRENT_DATABASE_VERSION
+        ) {
+            return ReleaseActionState.Incompatible(
+                "Database schema mismatch: requires schema downgrade or unsupported database version."
+            )
+        }
+
+        // 2. Check Android SDK level compatibility
+        if (android.os.Build.VERSION.SDK_INT < release.compatibility.minSdk) {
+            return ReleaseActionState.Incompatible(
+                "Requires Android API ${release.compatibility.minSdk}+ (device is API ${android.os.Build.VERSION.SDK_INT})."
+            )
+        }
+
+        return if (release.releaseType.equals("rollback", ignoreCase = true)) {
+            val targetBehavior = release.restoresBehaviorVersion ?: release.behaviorVersion.ifEmpty { release.installVersionName }
+            ReleaseActionState.CanRestore(release, targetBehavior)
+        } else {
+            ReleaseActionState.CanUpdate(release)
+        }
+    }
+
+    fun requestReleaseInstallation(release: ReleaseEntry) {
+        _selectedReleaseForConfirmation.value = release
+    }
+
+    fun dismissConfirmation() {
+        _selectedReleaseForConfirmation.value = null
+    }
+
+    fun confirmReleaseInstallation() {
+        val release = _selectedReleaseForConfirmation.value ?: return
+        _selectedReleaseForConfirmation.value = null
+        startDownload(release)
+    }
 
     init {
         // Initial silent check
