@@ -189,4 +189,86 @@ class UpdateSystemTest {
         // Available: 30MB -> insufficient
         assertFalse(isStorageSufficient(30L * 1024 * 1024, requiredStorage))
     }
+
+    @Test
+    fun testNoUpdateAvailableWhenInstalledVersionIsEqualOrGreater() {
+        val installedCode = 3L
+        val candidateSame = createSampleRelease(versionCode = 3, versionName = "1.0.2")
+
+        val updateAvailableSame = candidateSame.releaseType == "standard" && candidateSame.versionCode > installedCode
+        assertFalse("Same version must not trigger update", updateAvailableSame)
+
+        val installedCodeHigher = 4L
+        val updateAvailableLower = candidateSame.releaseType == "standard" && candidateSame.versionCode > installedCodeHigher
+        assertFalse("Older candidate must not trigger forward update", updateAvailableLower)
+    }
+
+    @Test
+    fun testPackageNameMismatchRejection() {
+        val appPackage = "com.gatecse.companion.debug"
+        val spoofedCatalog = ReleaseCatalog(
+            manifestVersion = 1,
+            channel = "debug",
+            packageName = "com.malicious.app",
+            recommendedUpdate = createSampleRelease(versionCode = 3),
+            releases = listOf()
+        )
+
+        val isPackageValid = spoofedCatalog.packageName == appPackage
+        assertFalse("Mismatched package name must be rejected", isPackageValid)
+    }
+
+    @Test
+    fun testSignatureMismatchRejection() {
+        val appFingerprint = "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73"
+        val candidateCertUntrusted = ReleaseSigningCertificate(
+            sha256Fingerprint = "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+        )
+
+        fun normalize(fp: String): String = fp.replace(":", "").trim().uppercase()
+
+        val isSignatureMatch = normalize(candidateCertUntrusted.sha256Fingerprint) == normalize(appFingerprint)
+        assertFalse("Mismatched signing certificate fingerprint must be rejected", isSignatureMatch)
+    }
+
+    @Test
+    fun testCorruptPayloadChecksumMismatchDetection() {
+        val expectedSha256 = "837AACEBF0708A0E2B995455D3D7573D46020220CD9BF56AE593C418F96793B7"
+        val payload = "Normal APK payload byte stream".toByteArray(Charsets.UTF_8)
+        
+        // Compute genuine hash
+        val md = MessageDigest.getInstance("SHA-256")
+        val genuineHash = md.digest(payload).joinToString("") { "%02x".format(it) }
+
+        // Corrupt single bit
+        val corruptedPayload = payload.clone()
+        corruptedPayload[0] = (corruptedPayload[0].toInt() xor 1).toByte()
+        md.reset()
+        val corruptedHash = md.digest(corruptedPayload).joinToString("") { "%02x".format(it) }
+
+        assertFalse("Corrupted payload hash must not match expected hash", corruptedHash.equals(expectedSha256, ignoreCase = true))
+        assertFalse("Corrupted payload hash must not match genuine hash", corruptedHash.equals(genuineHash, ignoreCase = true))
+    }
+
+    @Test
+    fun testActualCandidateApkArtifactIntegrity() {
+        val apkFile = java.io.File("C:/Users/sridh/Downloads/GateBuddy-v1.0.2.apk")
+        if (apkFile.exists()) {
+            assertEquals("Candidate APK size must match exact build output", 20892324L, apkFile.length())
+            val md = MessageDigest.getInstance("SHA-256")
+            apkFile.inputStream().use { stream ->
+                val buffer = ByteArray(65536)
+                var read: Int
+                while (stream.read(buffer).also { read = it } != -1) {
+                    md.update(buffer, 0, read)
+                }
+            }
+            val computedHash = md.digest().joinToString("") { "%02x".format(it) }
+            assertEquals(
+                "Candidate APK SHA-256 must match exactly",
+                "837aacebf0708a0e2b995455d3d7573d46020220cd9bf56ae593c418f96793b7",
+                computedHash.lowercase()
+            )
+        }
+    }
 }

@@ -13,8 +13,8 @@ android {
         applicationId = "com.gatecse.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = (project.findProperty("appVersionCode") as? String)?.toInt() ?: 2
+        versionName = (project.findProperty("appVersionName") as? String) ?: "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
