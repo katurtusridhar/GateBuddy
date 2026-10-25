@@ -11,7 +11,7 @@ interface TaskCardProps {
   onOpenReschedule?: () => void;
 }
 
-export function TaskCard({ task, onOpenReschedule }: TaskCardProps) {
+export function TaskCard({ task }: TaskCardProps) {
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState(task.notes || "");
   const [errorMessage] = useState<string | null>(null);
@@ -183,7 +183,7 @@ export function TaskCard({ task, onOpenReschedule }: TaskCardProps) {
         </div>
       </div>
 
-      {/* Rescheduled Banner (Matching Android Screenshot with Change Button) */}
+      {/* Rescheduled Banner (Mirroring Android Companion App) */}
       {canReschedule && (task.isAssignedForRecovery || task.status === "RECOVERY_SCHEDULED") && task.recoveryDate && (
         <div className="mt-3 flex items-center justify-between rounded-xl border border-amber-500/50 bg-[#451A03]/40 px-3 py-2 text-xs font-semibold text-amber-300">
           <div className="flex items-center gap-2">
@@ -194,31 +194,22 @@ export function TaskCard({ task, onOpenReschedule }: TaskCardProps) {
                 : `Rescheduled to: ${task.recoveryDate}`}
             </span>
           </div>
-
-          {onOpenReschedule && (
-            <button
-              onClick={onOpenReschedule}
-              className="rounded-lg bg-amber-500/25 px-2.5 py-1 text-[11px] font-bold text-amber-200 transition hover:bg-amber-500/40 hover:text-white"
-            >
-              Change
-            </button>
-          )}
+          <span className="text-[11px] font-medium text-amber-300/80 italic">
+            Configured in Companion App
+          </span>
         </div>
       )}
 
-      {/* Reschedule Call-to-Action for Past Missed Backlog (Strictly Core Lectures Only) */}
-      {canReschedule && !task.isAssignedForRecovery && task.status === "MISSED" && onOpenReschedule && (
+      {/* Backlog Notice for Past Missed Lecture (Exclusively Managed in App) */}
+      {canReschedule && !task.isAssignedForRecovery && task.status === "MISSED" && (
         <div className="mt-3 flex items-center justify-between rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-xs font-semibold text-rose-300">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-rose-400 shrink-0" />
-            <span>Lecture Backlog: Tap to assign recovery date</span>
+            <span>Lecture Backlog</span>
           </div>
-          <button
-            onClick={onOpenReschedule}
-            className="rounded-lg bg-rose-500/25 px-2.5 py-1 text-[11px] font-bold text-rose-200 transition hover:bg-rose-500/40 hover:text-white"
-          >
-            Reschedule
-          </button>
+          <span className="text-[11px] font-medium text-rose-300/80 italic">
+            Assign recovery date via Android App
+          </span>
         </div>
       )}
 

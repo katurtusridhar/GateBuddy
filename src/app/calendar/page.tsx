@@ -4,9 +4,7 @@ import React, { useState, useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useApp } from "@/lib/store";
 import { TaskCard } from "@/components/ui/TaskCard";
-import { RescheduleModal } from "@/components/modals/RescheduleModal";
 import { compareDateStrings, isSundayDate } from "@/lib/dateUtils";
-import { TaskItemUi } from "@/lib/types";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 
@@ -17,15 +15,11 @@ export default function CalendarPage() {
     recoveries,
     todayDateStr,
     getTasksForDate,
-    toggleTaskComplete,
-    rescheduleTask,
-    candidateSlots,
   } = useApp();
 
   const [currentYear, setCurrentYear] = useState(2026);
   const [currentMonth, setCurrentMonth] = useState(10); // Oct = 10
   const [selectedDateStr, setSelectedDateStr] = useState(todayDateStr);
-  const [taskToReschedule, setTaskToReschedule] = useState<TaskItemUi | null>(null);
 
   const selectedDateTasks = useMemo(() => getTasksForDate(selectedDateStr), [getTasksForDate, selectedDateStr]);
 
@@ -277,24 +271,12 @@ export default function CalendarPage() {
                   <TaskCard
                     key={task.id}
                     task={task}
-                    onToggleComplete={async (notes) => toggleTaskComplete(task.id, notes)}
-                    onOpenReschedule={() => setTaskToReschedule(task)}
                   />
                 ))
               )}
             </div>
           </div>
         </div>
-
-        {/* Reschedule Modal */}
-        {taskToReschedule && (
-          <RescheduleModal
-            task={taskToReschedule}
-            candidateSlots={candidateSlots}
-            onDismiss={() => setTaskToReschedule(null)}
-            onConfirm={async (newDate) => rescheduleTask(taskToReschedule.id, newDate)}
-          />
-        )}
       </div>
     </AppShell>
   );

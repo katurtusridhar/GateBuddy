@@ -19,7 +19,7 @@ import {
 import { getTodayDateStr, compareDateStrings, isSundayDate } from "./dateUtils";
 import { getCodeForSubject } from "./subjectRegistry";
 import { INITIAL_ACHIEVEMENTS } from "./achievementManager";
-import { validateReschedule, getCandidateRescheduleDates, getCandidateSlotsInfo } from "./recoveryEngine";
+import { getCandidateRescheduleDates, getCandidateSlotsInfo } from "./recoveryEngine";
 import rawScheduleData from "@/data/gate_cse_schedule.json";
 
 export interface UserProfile {
@@ -33,8 +33,30 @@ export const DEFAULT_CREDENTIALS: UserCredentials = {
   username: "katurtusridhar",
 };
 
+export function matchScheduleTask(task: ScheduleTask, queryId: string | undefined): boolean {
+  if (!queryId || !task) return false;
+  const clean = queryId.replace(/^REC_/, "").trim();
+  if (task.id === clean) return true;
+  const codeId = `${getCodeForSubject(task.subject)}_${task.curNum}`;
+  return codeId === clean;
+}
+
+export function findMatchingScheduleTask(tasks: ScheduleTask[], queryId: string | undefined): ScheduleTask | undefined {
+  if (!queryId) return undefined;
+  const clean = queryId.replace(/^REC_/, "").trim();
+  return tasks.find((t) => matchScheduleTask(t, clean));
+}
+
 // Seed user data matching real Android app state over Oct 19-22, 2026
 const INITIAL_PROGRESS_LIST: TaskProgress[] = [
+  {
+    taskId: "TASK_0005",
+    originalDate: "2026-10-21",
+    isCompleted: true,
+    completedAtTimestamp: 1729512000000,
+    completionType: "ON_TIME",
+    notes: "Completed on Wed Oct 21",
+  },
   {
     taskId: "DL_44",
     originalDate: "2026-10-21",
@@ -48,7 +70,7 @@ const INITIAL_PROGRESS_LIST: TaskProgress[] = [
 const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
   {
     id: 101,
-    taskId: "DL_42",
+    taskId: "TASK_0001",
     originalDate: "2026-10-19",
     recoveryDate: "2026-10-25",
     assignedAtTimestamp: 1729340000000,
@@ -58,7 +80,7 @@ const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
   },
   {
     id: 102,
-    taskId: "CN_19",
+    taskId: "TASK_0002",
     originalDate: "2026-10-19",
     recoveryDate: "2026-10-25",
     assignedAtTimestamp: 1729340000000,
@@ -68,7 +90,7 @@ const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
   },
   {
     id: 103,
-    taskId: "DL_43",
+    taskId: "TASK_0003",
     originalDate: "2026-10-20",
     recoveryDate: "2026-11-01",
     assignedAtTimestamp: 1729426000000,
@@ -78,7 +100,7 @@ const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
   },
   {
     id: 104,
-    taskId: "CN_20",
+    taskId: "TASK_0004",
     originalDate: "2026-10-20",
     recoveryDate: "2026-11-01",
     assignedAtTimestamp: 1729426000000,
@@ -88,7 +110,7 @@ const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
   },
   {
     id: 105,
-    taskId: "CN_21",
+    taskId: "TASK_0006",
     originalDate: "2026-10-21",
     recoveryDate: "2026-11-08",
     assignedAtTimestamp: 1729512000000,
@@ -98,7 +120,7 @@ const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
   },
   {
     id: 106,
-    taskId: "DL_45",
+    taskId: "TASK_0007",
     originalDate: "2026-10-22",
     recoveryDate: "2026-11-08",
     assignedAtTimestamp: 1729598000000,
@@ -108,7 +130,7 @@ const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
   },
   {
     id: 107,
-    taskId: "CN_22",
+    taskId: "TASK_0008",
     originalDate: "2026-10-22",
     recoveryDate: "2026-11-15",
     assignedAtTimestamp: 1729598000000,
@@ -676,13 +698,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         // Count uncompleted recoveries on day d belonging to this track
         const dRecs = recoveries.filter((r) => {
-          const rt = tasks.find((t) => t.id === r.taskId);
+          const rt = findMatchingScheduleTask(tasks, r.taskId);
           const sub = rt?.subject || "";
+          const isDone =
+            r.isCompleted ||
+            progress.get(r.taskId)?.isCompleted === true ||
+            (rt && (progress.get(rt.id)?.isCompleted === true || progress.get(`${getCodeForSubject(rt.subject)}_${rt.curNum}`)?.isCompleted === true));
           return (
             r.recoveryDate === d &&
             getTrackForSubject(sub) === trackNum &&
-            !r.isCompleted &&
-            progress.get(r.taskId)?.isCompleted !== true
+            !isDone
           );
         });
 
@@ -835,11 +860,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const scheduled = tasks.filter((t) => t.date === targetDateStr);
         for (const t of scheduled) {
           const adaptedTask = getSequentialLecture(t, targetDateStr);
-          const prog = progress.get(t.id);
+          const codeId = `${getCodeForSubject(t.subject)}_${t.curNum}`;
+          const prog = progress.get(t.id) || progress.get(codeId);
           const isDone = prog?.isCompleted === true;
           const rec = recoveries.find(
             (r) =>
-              r.taskId === t.id &&
+              (r.taskId === t.id || r.taskId === codeId) &&
               (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED" || r.status === "COMPLETED")
           );
 
@@ -962,14 +988,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       for (let rIdx = 0; rIdx < recoveriesForDate.length; rIdx++) {
         const rec = recoveriesForDate[rIdx];
-        const originalTask = tasks.find((t) => t.id === rec.taskId);
+        const originalTask = findMatchingScheduleTask(tasks, rec.taskId);
         if (!originalTask) continue;
-        const prog = progress.get(rec.taskId);
+        const codeId = `${getCodeForSubject(originalTask.subject)}_${originalTask.curNum}`;
+        const prog = progress.get(rec.taskId) || progress.get(originalTask.id) || progress.get(codeId);
         const isDone = prog?.isCompleted === true || rec.isCompleted;
 
         // Count earlier recoveries for the same subject on this same day
         const earlierRecCount = recoveriesForDate.slice(0, rIdx).filter((other) => {
-          const ot = tasks.find((t) => t.id === other.taskId);
+          const ot = findMatchingScheduleTask(tasks, other.taskId);
           return getTrackForSubject(ot?.subject || "") === getTrackForSubject(originalTask.subject);
         }).length;
 
@@ -1077,10 +1104,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     );
 
     for (const t of pastTasks) {
-      const isDone = progress.get(t.id)?.isCompleted === true;
+      const codeId = `${getCodeForSubject(t.subject)}_${t.curNum}`;
+      const isDone = progress.get(t.id)?.isCompleted === true || progress.get(codeId)?.isCompleted === true;
       if (!isDone) {
         const rec = recoveries.find(
-          (r) => r.taskId === t.id && (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED")
+          (r) =>
+            (r.taskId === t.id || r.taskId === codeId) &&
+            (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED")
         );
         const hasValidFutureRecovery = Boolean(
           rec && compareDateStrings(rec.recoveryDate, todayDateStr) >= 0
@@ -1139,128 +1169,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Action: Reschedule single task
+  // Action: Reschedule single task (Read-Only Mirror - Exclusively managed in Android App)
   const rescheduleTask = useCallback(
-    async (rawTaskId: string, newDate: string) => {
-      const cleanId = rawTaskId.replace(/^REC_/, "");
-      const validation = validateReschedule(cleanId, newDate, todayDateStr, recoveriesRef.current, tasks);
-
-      if (!validation.valid) {
-        return { success: false, error: validation.error };
-      }
-
-      const targetTask = tasks.find((t) => t.id === cleanId);
-      if (!targetTask) return { success: false, error: "Task not found" };
-
-      let nextRecs: RecoveryAssignment[];
-      const existing = recoveriesRef.current.find((r) => r.taskId === cleanId);
-      if (existing) {
-        nextRecs = recoveriesRef.current.map((r) =>
-          r.taskId === cleanId ? { ...r, recoveryDate: newDate, status: "MANUAL_CONFIRMED" } : r
-        );
-      } else {
-        const newRec: RecoveryAssignment = {
-          id: Date.now(),
-          taskId: cleanId,
-          originalDate: targetTask.date,
-          recoveryDate: newDate,
-          assignedAtTimestamp: Date.now(),
-          isCompleted: false,
-          priorityLevel: 2,
-          status: "MANUAL_CONFIRMED",
-        };
-        nextRecs = [...recoveriesRef.current, newRec];
-      }
-
-      recoveriesRef.current = nextRecs;
-      setRecoveries(nextRecs);
-      syncWithCloud(undefined, nextRecs);
-      return { success: true };
+    async (..._args: any[]) => {
+      void _args;
+      return {
+        success: false,
+        error: "Lecture rescheduling is only possible through the GATEBuddy Android companion app.",
+      };
     },
-    [tasks, todayDateStr, syncWithCloud]
+    []
   );
 
-  // Action: Batch reschedule
+  // Action: Batch reschedule (Read-Only Mirror - Exclusively managed in Android App)
   const batchReschedule = useCallback(
-    async (assignments: Record<string, string>) => {
-      const byDate = new Map<string, string[]>();
-      for (const [rawId, dateStr] of Object.entries(assignments)) {
-        const cleanId = rawId.replace(/^REC_/, "");
-        if (compareDateStrings(dateStr, todayDateStr) < 0) {
-          return { success: false, error: `Cannot reschedule to past date (${dateStr}).` };
-        }
-        const arr = byDate.get(dateStr) || [];
-        arr.push(cleanId);
-        byDate.set(dateStr, arr);
-      }
-
-      for (const [dateStr, taskIds] of Array.from(byDate.entries())) {
-        const existingOnDate = recoveriesRef.current.filter(
-          (r) =>
-            r.recoveryDate === dateStr &&
-            !taskIds.includes(r.taskId) &&
-            (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED")
-        );
-
-        const totalCount = existingOnDate.length + taskIds.length;
-        if (totalCount > 2) {
-          return {
-            success: false,
-            error: `Rule 1 Violation: ${dateStr} would have ${totalCount} lectures. Maximum 2 allowed.`,
-          };
-        }
-
-        const subjectsOnDate = new Set<string>();
-        for (const r of existingOnDate) {
-          const t = tasks.find((item) => item.id === r.taskId);
-          if (t) subjectsOnDate.add(t.subject.toLowerCase().trim());
-        }
-
-        for (const id of taskIds) {
-          const t = tasks.find((item) => item.id === id);
-          if (t) {
-            const subj = t.subject.toLowerCase().trim();
-            if (subjectsOnDate.has(subj)) {
-              return {
-                success: false,
-                error: `Rule 2 Violation: Multiple lectures for '${t.subject}' assigned to ${dateStr}.`,
-              };
-            }
-            subjectsOnDate.add(subj);
-          }
-        }
-      }
-
-      const map = new Map(recoveriesRef.current.map((r) => [r.taskId, r]));
-      for (const [rawId, dateStr] of Object.entries(assignments)) {
-        const cleanId = rawId.replace(/^REC_/, "");
-        const targetTask = tasks.find((t) => t.id === cleanId);
-        if (!targetTask) continue;
-
-        const existing = map.get(cleanId);
-        if (existing) {
-          map.set(cleanId, { ...existing, recoveryDate: dateStr, status: "MANUAL_CONFIRMED" });
-        } else {
-          map.set(cleanId, {
-            id: Date.now() + Math.floor(Math.random() * 1000),
-            taskId: cleanId,
-            originalDate: targetTask.date,
-            recoveryDate: dateStr,
-            assignedAtTimestamp: Date.now(),
-            isCompleted: false,
-            priorityLevel: 2,
-            status: "MANUAL_CONFIRMED",
-          });
-        }
-      }
-
-      const nextRecs = Array.from(map.values());
-      recoveriesRef.current = nextRecs;
-      setRecoveries(nextRecs);
-      syncWithCloud(undefined, nextRecs);
-      return { success: true };
+    async (..._args: any[]) => {
+      void _args;
+      return {
+        success: false,
+        error: "Batch rescheduling is only possible through the GATEBuddy Android companion app.",
+      };
     },
-    [tasks, todayDateStr, syncWithCloud]
+    []
   );
 
   // Unidirectional App -> Website Sync Model:

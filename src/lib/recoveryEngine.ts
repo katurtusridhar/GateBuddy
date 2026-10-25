@@ -4,6 +4,7 @@ import {
   CandidateDateSlot,
 } from "./types";
 import { compareDateStrings, addDaysToDateStr, isSundayDate } from "./dateUtils";
+import { getCodeForSubject } from "./subjectRegistry";
 
 /**
  * Returns candidate upcoming Sundays and buffer days for recovery scheduling.
@@ -51,6 +52,7 @@ export function getCandidateSlotsInfo(
   const taskMap = new Map<string, ScheduleTask>();
   for (const t of allTasks) {
     taskMap.set(t.id, t);
+    taskMap.set(`${getCodeForSubject(t.subject)}_${t.curNum}`, t);
   }
 
   const recoveriesByDate = new Map<string, RecoveryAssignment[]>();
@@ -112,6 +114,7 @@ export function validateReschedule(
   const taskMap = new Map<string, ScheduleTask>();
   for (const t of allTasks) {
     taskMap.set(t.id, t);
+    taskMap.set(`${getCodeForSubject(t.subject)}_${t.curNum}`, t);
   }
 
   const targetTask = taskMap.get(taskId);

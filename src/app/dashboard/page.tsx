@@ -6,11 +6,7 @@ import { useApp } from "@/lib/store";
 import { TaskCard } from "@/components/ui/TaskCard";
 import { ProgressRing } from "@/components/ui/ProgressRing";
 import { CyberCard } from "@/components/ui/CyberCard";
-import { RescheduleModal } from "@/components/modals/RescheduleModal";
-import { BatchBacklogModal } from "@/components/modals/BatchBacklogModal";
 import { calculateDailyScore, calculateAdherenceAndForecast } from "@/lib/analyticsEngine";
-import { TaskItemUi } from "@/lib/types";
-import { getCandidateRescheduleDates } from "@/lib/recoveryEngine";
 import {
   Flame,
   ShieldAlert,
@@ -29,11 +25,7 @@ export default function DashboardPage() {
     user,
     todayDateStr,
     getTasksForDate,
-    toggleTaskComplete,
-    rescheduleTask,
-    batchReschedule,
     activeBacklogs,
-    candidateSlots,
     tasks,
     progress,
     customTasks,
@@ -42,9 +34,6 @@ export default function DashboardPage() {
     assessments,
     changeCredentials,
   } = useApp();
-
-  const [taskToReschedule, setTaskToReschedule] = useState<TaskItemUi | null>(null);
-  const [showBatchModal, setShowBatchModal] = useState(false);
 
   // Credentials Update Modal State
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
@@ -88,11 +77,6 @@ export default function DashboardPage() {
   };
 
   const todayTasks = useMemo(() => getTasksForDate(todayDateStr), [getTasksForDate, todayDateStr]);
-
-  const candidateDates = useMemo(
-    () => getCandidateRescheduleDates(todayDateStr, tasks),
-    [todayDateStr, tasks]
-  );
 
   const dailyScore = useMemo(
     () =>
@@ -170,35 +154,31 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Backlog Restriction Alert if backlogs exist */}
+        {/* Backlog Notice if unrescheduled backlogs exist in sync state */}
         {activeBacklogs.length > 0 && (
-          <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-rose-500/60 bg-gradient-to-r from-rose-950/40 via-gate-card to-gate-card p-5 shadow-glowRose sm:flex-row sm:items-center">
+          <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-amber-500/50 bg-gradient-to-r from-amber-950/40 via-gate-card to-gate-card p-5 shadow-glowAmber sm:flex-row sm:items-center">
             <div className="flex items-center gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-500/20 text-rose-400">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
                 <ShieldAlert className="h-6 w-6" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-rose-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-rose-400">
-                    BACKLOG RESTRICTION
+                  <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-black uppercase text-amber-400">
+                    PENDING BACKLOG NOTICE
                   </span>
                   <span className="text-xs font-bold text-white">
                     {activeBacklogs.length} Unrescheduled Lecture(s)
                   </span>
                 </div>
                 <p className="mt-0.5 text-xs text-slate-300">
-                  Direct task tracking is restricted until missed lectures are rescheduled into available Sundays or buffer slots.
+                  Reschedule missed lectures into upcoming Sunday buffer slots directly inside your GATEBuddy Android App.
                 </p>
               </div>
             </div>
 
-            <button
-              onClick={() => setShowBatchModal(true)}
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-rose-500 px-5 py-2.5 text-xs font-bold text-white shadow-glowRose transition hover:bg-rose-600"
-            >
-              <span>Reschedule & Unlock</span>
-              <ArrowRight className="h-4 w-4" />
-            </button>
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300">
+              Manage in Android App
+            </div>
           </div>
         )}
 
@@ -225,8 +205,6 @@ export default function DashboardPage() {
                 <TaskCard
                   key={task.id}
                   task={task}
-                  onToggleComplete={async (notes) => toggleTaskComplete(task.id, notes)}
-                  onOpenReschedule={() => setTaskToReschedule(task)}
                 />
               ))}
             </div>
@@ -315,27 +293,6 @@ export default function DashboardPage() {
             </CyberCard>
           </div>
         </div>
-
-        {/* Modal: Single Task Reschedule */}
-        {taskToReschedule && (
-          <RescheduleModal
-            task={taskToReschedule}
-            candidateSlots={candidateSlots}
-            onDismiss={() => setTaskToReschedule(null)}
-            onConfirm={async (newDate) => rescheduleTask(taskToReschedule.id, newDate)}
-          />
-        )}
-
-        {/* Modal: Batch Backlog Reschedule */}
-        {showBatchModal && (
-          <BatchBacklogModal
-            backlogs={activeBacklogs}
-            candidateDates={candidateDates}
-            candidateSlots={candidateSlots}
-            onDismiss={() => setShowBatchModal(false)}
-            onConfirmAll={async (assignments) => batchReschedule(assignments)}
-          />
-        )}
 
         {/* Modal: Change Username & Password via Master Code */}
         {showCredentialsModal && (

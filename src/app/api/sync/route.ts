@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
       if (assessRes.error) dbErrors.push({ table: "assessment_results", err: assessRes.error.message });
       if (customRes.error) dbErrors.push({ table: "custom_tasks", err: customRes.error.message });
 
-      if (!progRes.error && progRes.data && progRes.data.length > 0) {
+      if (!progRes.error && Array.isArray(progRes.data)) {
         serverSyncState.progress = progRes.data.map((p) => {
           if (p.updated_at) {
             const t = new Date(p.updated_at).getTime();
@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      if (!recRes.error && recRes.data && recRes.data.length > 0) {
+      if (!recRes.error && Array.isArray(recRes.data)) {
         serverSyncState.recoveries = recRes.data.map((r) => {
           if (r.updated_at) {
             const t = new Date(r.updated_at).getTime();
@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      if (!assessRes.error && assessRes.data && assessRes.data.length > 0) {
+      if (!assessRes.error && Array.isArray(assessRes.data)) {
         serverSyncState.assessments = assessRes.data.map((a: any) => ({
           id: a.id,
           testDate: a.test_date || a.testDate,
@@ -158,11 +158,11 @@ export async function GET(req: NextRequest) {
         }));
       }
 
-      if (!customRes.error && customRes.data && customRes.data.length > 0) {
+      if (!customRes.error && Array.isArray(customRes.data)) {
         serverSyncState.customTasks = customRes.data;
       }
 
-      if (achRes && !achRes.error && achRes.data && achRes.data.length > 0) {
+      if (achRes && !achRes.error && Array.isArray(achRes.data)) {
         const existingMap = new Map(serverSyncState.achievements.map((a: any) => [a.code || a.id, a]));
         for (const remoteAch of achRes.data) {
           const code = remoteAch.code;
@@ -178,7 +178,7 @@ export async function GET(req: NextRequest) {
         serverSyncState.achievements = Array.from(existingMap.values());
       }
 
-      if (dppRes && !dppRes.error && dppRes.data && dppRes.data.length > 0) {
+      if (dppRes && !dppRes.error && Array.isArray(dppRes.data)) {
         serverSyncState.dppRecords = dppRes.data;
       }
       }
@@ -485,67 +485,76 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        if (Array.isArray(assessments) && assessments.length > 0) {
-          const rows = assessments.map((a: any) => ({
-            user_id: userUuid,
-            test_date: a.testDate,
-            test_name: a.testName,
-            subject_name: a.subjectName,
-            marks_obtained: a.marksObtained,
-            max_marks: a.maxMarks,
-            percentage: a.percentage,
-            questions_attempted: a.questionsAttempted,
-            questions_correct: a.questionsCorrect,
-            topic: a.topic || "",
-            mistakes_analysis: a.mistakesAnalysis || "",
-            follow_up_tasks: a.followUpTasks || "",
-            updated_at: new Date(mutationTimestamp).toISOString(),
-          }));
-          const { error } = await dbClient.from("assessment_results").upsert(rows);
-          if (error) {
-            console.warn("Supabase assessment_results upsert error:", error.message);
-            dbErrors.push({ table: "assessment_results", error: error.message });
+        if (Array.isArray(assessments)) {
+          await dbClient.from("assessment_results").delete().eq("user_id", userUuid);
+          if (assessments.length > 0) {
+            const rows = assessments.map((a: any) => ({
+              user_id: userUuid,
+              test_date: a.testDate,
+              test_name: a.testName,
+              subject_name: a.subjectName,
+              marks_obtained: a.marksObtained,
+              max_marks: a.maxMarks,
+              percentage: a.percentage,
+              questions_attempted: a.questionsAttempted,
+              questions_correct: a.questionsCorrect,
+              topic: a.topic || "",
+              mistakes_analysis: a.mistakesAnalysis || "",
+              follow_up_tasks: a.followUpTasks || "",
+              updated_at: new Date(mutationTimestamp).toISOString(),
+            }));
+            const { error } = await dbClient.from("assessment_results").insert(rows);
+            if (error) {
+              console.warn("Supabase assessment_results insert error:", error.message);
+              dbErrors.push({ table: "assessment_results", error: error.message });
+            }
           }
         }
 
-        if (Array.isArray(dppRecords) && dppRecords.length > 0) {
-          const rows = dppRecords.map((d: any) => ({
-            user_id: userUuid,
-            date: d.date,
-            subject_code: d.subjectCode || d.subject_code || "GATE",
-            subject_name: d.subjectName || d.subject_name || "General",
-            topic: d.topic || "",
-            total_questions: Number(d.totalQuestions || d.total_questions || 0),
-            questions_correct: Number(d.questionsCorrect || d.questions_correct || 0),
-            accuracy_percentage: Number(d.accuracyPercentage || d.accuracy_percentage || 0.0),
-            notes: d.notes || "",
-            created_at: d.createdAtTimestamp ? new Date(d.createdAtTimestamp).toISOString() : new Date().toISOString(),
-            updated_at: new Date(mutationTimestamp).toISOString(),
-          }));
-          const { error } = await dbClient.from("dpp_records").upsert(rows);
-          if (error) {
-            console.warn("Supabase dpp_records upsert error:", error.message);
-            dbErrors.push({ table: "dpp_records", error: error.message });
+        if (Array.isArray(dppRecords)) {
+          await dbClient.from("dpp_records").delete().eq("user_id", userUuid);
+          if (dppRecords.length > 0) {
+            const rows = dppRecords.map((d: any) => ({
+              user_id: userUuid,
+              date: d.date,
+              subject_code: d.subjectCode || d.subject_code || "GATE",
+              subject_name: d.subjectName || d.subject_name || "General",
+              topic: d.topic || "",
+              total_questions: Number(d.totalQuestions || d.total_questions || 0),
+              questions_correct: Number(d.questionsCorrect || d.questions_correct || 0),
+              accuracy_percentage: Number(d.accuracyPercentage || d.accuracy_percentage || 0.0),
+              notes: d.notes || "",
+              created_at: d.createdAtTimestamp ? new Date(d.createdAtTimestamp).toISOString() : new Date().toISOString(),
+              updated_at: new Date(mutationTimestamp).toISOString(),
+            }));
+            const { error } = await dbClient.from("dpp_records").insert(rows);
+            if (error) {
+              console.warn("Supabase dpp_records insert error:", error.message);
+              dbErrors.push({ table: "dpp_records", error: error.message });
+            }
           }
         }
 
-        if (Array.isArray(customTasks) && customTasks.length > 0) {
-          const rows = customTasks.map((c: any) => ({
-            user_id: userUuid,
-            date: c.date,
-            title: c.title,
-            subject_code: c.subjectCode || "GATE",
-            subject_name: c.subjectName || "General / Practice",
-            is_completed: c.isCompleted === true,
-            completed_at: c.completedAtTimestamp ? new Date(c.completedAtTimestamp).toISOString() : null,
-            notes: c.notes || "",
-            points_value: c.pointsValue || 5,
-            updated_at: new Date(mutationTimestamp).toISOString(),
-          }));
-          const { error } = await dbClient.from("custom_tasks").upsert(rows);
-          if (error) {
-            console.warn("Supabase custom_tasks upsert error:", error.message);
-            dbErrors.push({ table: "custom_tasks", error: error.message });
+        if (Array.isArray(customTasks)) {
+          await dbClient.from("custom_tasks").delete().eq("user_id", userUuid);
+          if (customTasks.length > 0) {
+            const rows = customTasks.map((c: any) => ({
+              user_id: userUuid,
+              date: c.date,
+              title: c.title,
+              subject_code: c.subjectCode || "GATE",
+              subject_name: c.subjectName || "General / Practice",
+              is_completed: c.isCompleted === true,
+              completed_at: c.completedAtTimestamp ? new Date(c.completedAtTimestamp).toISOString() : null,
+              notes: c.notes || "",
+              points_value: c.pointsValue || 5,
+              updated_at: new Date(mutationTimestamp).toISOString(),
+            }));
+            const { error } = await dbClient.from("custom_tasks").insert(rows);
+            if (error) {
+              console.warn("Supabase custom_tasks insert error:", error.message);
+              dbErrors.push({ table: "custom_tasks", error: error.message });
+            }
           }
         }
       } catch (dbErr: any) {

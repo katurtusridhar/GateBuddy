@@ -1,35 +1,18 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useApp } from "@/lib/store";
 import { CyberCard } from "@/components/ui/CyberCard";
 import { TaskCard } from "@/components/ui/TaskCard";
-import { RescheduleModal } from "@/components/modals/RescheduleModal";
-import { BatchBacklogModal } from "@/components/modals/BatchBacklogModal";
-import { TaskItemUi } from "@/lib/types";
-import { getCandidateRescheduleDates } from "@/lib/recoveryEngine";
-import { Sparkles, CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Smartphone } from "lucide-react";
 
 export default function RecoveryCenterPage() {
   const {
     activeBacklogs,
     recoveries,
-    tasks,
     candidateSlots,
-    todayDateStr,
-    toggleTaskComplete,
-    rescheduleTask,
-    batchReschedule,
   } = useApp();
-
-  const [taskToReschedule, setTaskToReschedule] = useState<TaskItemUi | null>(null);
-  const [showBatchModal, setShowBatchModal] = useState(false);
-
-  const candidateDates = useMemo(
-    () => getCandidateRescheduleDates(todayDateStr, tasks),
-    [todayDateStr, tasks]
-  );
 
   const activeAssignedRecoveries = useMemo(() => {
     return recoveries.filter(
@@ -45,27 +28,22 @@ export default function RecoveryCenterPage() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold tracking-widest text-amber-400 uppercase">
-                INTELLIGENT RECOVERY ENGINE
+                RECOVERY STATUS MIRROR
               </span>
               <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">
-                ACTIVE
+                READ-ONLY MIRROR
               </span>
             </div>
             <h1 className="mt-1 text-2xl font-black text-white sm:text-3xl">Backlog Recovery Command</h1>
             <p className="mt-1 text-xs text-slate-400">
-              Zero-debt recovery management enforcing Rule 1 (max 2/day) and Rule 2 (unique subjects per day).
+              Mirror view of Rule 1 (max 2/day) and Rule 2 (unique subjects) recovery assignments synced from your Android App.
             </p>
           </div>
 
-          {activeBacklogs.length > 0 && (
-            <button
-              onClick={() => setShowBatchModal(true)}
-              className="flex shrink-0 items-center gap-2 rounded-xl bg-amber-500 px-5 py-2.5 text-xs font-bold text-slate-950 shadow-glowAmber transition hover:bg-amber-400"
-            >
-              <Sparkles className="h-4 w-4" />
-              <span>Auto-Sequence All Backlogs</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs font-semibold text-amber-300">
+            <Smartphone className="h-4 w-4" />
+            <span>Managed via GATEBuddy Android App</span>
+          </div>
         </div>
 
         {/* Stats Row */}
@@ -74,7 +52,7 @@ export default function RecoveryCenterPage() {
             <span className="text-xs font-semibold text-slate-400 uppercase">Unrescheduled Backlogs</span>
             <p className="mt-2 text-3xl font-extrabold text-white">{activeBacklogs.length}</p>
             <p className="mt-1 text-xs text-slate-400">
-              {activeBacklogs.length === 0 ? "No backlogs pending! You are 100% on track." : "Requires assignment into buffer slots."}
+              {activeBacklogs.length === 0 ? "No backlogs pending! You are 100% on track." : "Requires assignment via Android App."}
             </p>
           </CyberCard>
 
@@ -100,12 +78,9 @@ export default function RecoveryCenterPage() {
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-white">Pending Backlogs ({activeBacklogs.length})</h2>
               {activeBacklogs.length > 0 && (
-                <button
-                  onClick={() => setShowBatchModal(true)}
-                  className="text-xs font-semibold text-amber-400 hover:underline"
-                >
-                  Sequential Auto-Assign
-                </button>
+                <span className="text-xs font-medium text-slate-400 italic">
+                  Reschedule via Android Companion App
+                </span>
               )}
             </div>
 
@@ -123,8 +98,6 @@ export default function RecoveryCenterPage() {
                   <TaskCard
                     key={task.id}
                     task={task}
-                    onToggleComplete={async (notes) => toggleTaskComplete(task.id, notes)}
-                    onOpenReschedule={() => setTaskToReschedule(task)}
                   />
                 ))}
               </div>
@@ -168,26 +141,6 @@ export default function RecoveryCenterPage() {
             </CyberCard>
           </div>
         </div>
-
-        {/* Modals */}
-        {taskToReschedule && (
-          <RescheduleModal
-            task={taskToReschedule}
-            candidateSlots={candidateSlots}
-            onDismiss={() => setTaskToReschedule(null)}
-            onConfirm={async (newDate) => rescheduleTask(taskToReschedule.id, newDate)}
-          />
-        )}
-
-        {showBatchModal && (
-          <BatchBacklogModal
-            backlogs={activeBacklogs}
-            candidateDates={candidateDates}
-            candidateSlots={candidateSlots}
-            onDismiss={() => setShowBatchModal(false)}
-            onConfirmAll={async (assignments) => batchReschedule(assignments)}
-          />
-        )}
       </div>
     </AppShell>
   );
