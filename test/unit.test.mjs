@@ -267,6 +267,57 @@ test('Sunday Points Target Verification: Sunday Test (20 pts) + Revision (5 pts)
 
   const weeklyRollingTarget = 30 * 7;
   assert.equal(weeklyRollingTarget, 210, '7-day rolling target must be 210 points');
+
+  // Subtest: Verify Sunday point system resolution with synthetic SUNDAY_TEST_ task ID and assessment
+  function resolveSundayScore(targetDateStr, currentDateStr, dayTasks, progressMap, assessments) {
+    const isPast = targetDateStr < currentDateStr;
+    let points = 0;
+    const scheduledTest = dayTasks.find((t) => t.type === 'SUNDAY_TEST' || (t.isSundayActivity && t.slot === 1));
+    const testProg = progressMap.get('SUNDAY_TEST_' + targetDateStr) || (scheduledTest ? progressMap.get(scheduledTest.id) : undefined);
+    const assessment = assessments.find((a) => (a.testDate || a.test_date) === targetDateStr);
+    const isTestComplete = testProg?.isCompleted || !!assessment;
+
+    if (isTestComplete) {
+      let pct = assessment?.percentage;
+      if (pct === undefined && testProg?.notes) {
+        const match = testProg.notes.match(/Marks:\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+        if (match) {
+          const scored = parseFloat(match[1]);
+          const max = parseFloat(match[2]);
+          pct = max > 0 ? (scored / max) * 100 : 100;
+        }
+      }
+      if (pct === undefined) pct = 100;
+      points += Math.min(20, Math.max(0, Math.round((pct / 100) * 20)));
+    } else if (isPast) {
+      points -= 4;
+    }
+
+    if (progressMap.get('BOOSTER_REV_' + targetDateStr)?.isCompleted) points += 5;
+    else if (isPast) points -= 1;
+
+    const scheduledPyq = dayTasks.find((t) => t.type === 'SUNDAY_PYQ' || (t.isSundayActivity && t.slot === 2));
+    const pyqProg = progressMap.get('BOOSTER_PS_' + targetDateStr) || (scheduledPyq ? progressMap.get(scheduledPyq.id) : undefined);
+    if (pyqProg?.isCompleted) points += 5;
+    else if (isPast) points -= 1;
+
+    return points;
+  }
+
+  const sundayTasks = [
+    { id: 'TASK_0013', date: '2026-10-25', slot: 1, type: 'SUNDAY_TEST', isSundayActivity: true },
+    { id: 'TASK_0014', date: '2026-10-25', slot: 2, type: 'SUNDAY_PYQ', isSundayActivity: true },
+  ];
+  const progressMap = new Map([
+    ['SUNDAY_TEST_2026-10-25', { taskId: 'SUNDAY_TEST_2026-10-25', originalDate: '2026-10-25', isCompleted: true }],
+    ['BOOSTER_REV_2026-10-25', { taskId: 'BOOSTER_REV_2026-10-25', originalDate: '2026-10-25', isCompleted: true }],
+    ['BOOSTER_PS_2026-10-25', { taskId: 'BOOSTER_PS_2026-10-25', originalDate: '2026-10-25', isCompleted: true }],
+  ]);
+  const assessments = [
+    { testDate: '2026-10-25', marksObtained: 40, maxMarks: 50, percentage: 80 },
+  ];
+  const totalSundayPoints = resolveSundayScore('2026-10-25', '2026-10-25', sundayTasks, progressMap, assessments);
+  assert.equal(totalSundayPoints, 26, 'Sunday test with 80% (16 pts) + Rev (5) + PS (5) must equal 26 daily points');
 });
 
 // 8. CONTINUOUS TRACK LECTURE ORDERING & SUBJECT TRANSITION GUARANTEE

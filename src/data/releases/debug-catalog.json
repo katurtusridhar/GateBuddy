@@ -1,31 +1,31 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-10-25T16:48:00.000Z",
+  "generatedAt": "2026-10-25T17:28:00.000Z",
   "channel": "debug",
   "packageName": "com.gatecse.companion.debug",
   "recommendedUpdate": {
-    "releaseId": "rel-1.0.6-b9",
-    "behaviorVersion": "1.0.6",
-    "installVersionCode": 9,
-    "installVersionName": "1.0.6",
-    "versionCode": 9,
-    "versionName": "1.0.6",
+    "releaseId": "rel-1.0.7-b10",
+    "behaviorVersion": "1.0.7",
+    "installVersionCode": 10,
+    "installVersionName": "1.0.7",
+    "versionCode": 10,
+    "versionName": "1.0.7",
     "releaseType": "standard",
-    "releaseDate": "2026-10-25T16:48:00.000Z",
+    "releaseDate": "2026-10-25T17:28:00.000Z",
     "verificationStatus": "verified",
     "changelog": {
-      "summary": "Sunday Test Score-Based Scoring (+20 max), 7-Day Rolling Average, and Navigation Typography Fix",
+      "summary": "Sunday Test Point System Fix: Synthetic Task ID Mapping, Assessment Linking & Backlog Resolution",
       "highlights": [
-        "Score-based Sunday test points: marks percentage mapped proportionally to max 20 points",
-        "Updated Sunday points distribution: Test (+20 max) • Revision (+5) • PYQ Practice (+5)",
-        "Missed Sunday test penalty: -4 points applied to unattempted past Sunday tests",
-        "7-day rolling average points tracking across Today screen and Analytics dashboard",
-        "Refined bottom navigation bar typography ensuring 'Tests & DPP' stays single-line without wrapping"
+        "Fixed Sunday test completion point calculation when entering marks or recording assessments",
+        "Resolved synthetic task ID (SUNDAY_TEST_YYYY-MM-DD) mapping to scheduled tasks in Analytics Engine",
+        "Automatic bi-directional task completion synchronization upon submitting test score",
+        "Prevented completed Sunday tests from showing up in overdue backlog",
+        "Fixed backend snake_case column mapping for assessment results during PostgreSQL synchronization"
       ]
     },
-    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.6.apk",
+    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.7.apk",
     "apkSizeBytes": 20941480,
-    "sha256": "FCD4593E701ECC483D21F42A81E11406AD17C0DE15766439DB899911E328FC78",
+    "sha256": "ca34d2dd925cde56622df29d56d1d3821d11f05fd3204629180852e6de1527c3",
     "signingCertificate": {
       "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
       "subjectDn": "C=US, O=Android, CN=Android Debug"
@@ -42,6 +42,44 @@
     }
   },
   "releases": [
+    {
+      "releaseId": "rel-1.0.7-b10",
+      "behaviorVersion": "1.0.7",
+      "installVersionCode": 10,
+      "installVersionName": "1.0.7",
+      "versionCode": 10,
+      "versionName": "1.0.7",
+      "releaseType": "standard",
+      "releaseDate": "2026-10-25T17:28:00.000Z",
+      "verificationStatus": "verified",
+      "changelog": {
+        "summary": "Sunday Test Point System Fix: Synthetic Task ID Mapping, Assessment Linking & Backlog Resolution",
+        "highlights": [
+          "Fixed Sunday test completion point calculation when entering marks or recording assessments",
+          "Resolved synthetic task ID (SUNDAY_TEST_YYYY-MM-DD) mapping to scheduled tasks in Analytics Engine",
+          "Automatic bi-directional task completion synchronization upon submitting test score",
+          "Prevented completed Sunday tests from showing up in overdue backlog",
+          "Fixed backend snake_case column mapping for assessment results during PostgreSQL synchronization"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.7.apk",
+      "apkSizeBytes": 20941480,
+      "sha256": "ca34d2dd925cde56622df29d56d1d3821d11f05fd3204629180852e6de1527c3",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
     {
       "releaseId": "rel-1.0.6-b9",
       "behaviorVersion": "1.0.6",

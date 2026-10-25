@@ -143,7 +143,19 @@ export async function GET(req: NextRequest) {
       }
 
       if (!assessRes.error && assessRes.data && assessRes.data.length > 0) {
-        serverSyncState.assessments = assessRes.data;
+        serverSyncState.assessments = assessRes.data.map((a: any) => ({
+          id: a.id,
+          testDate: a.test_date || a.testDate,
+          testName: a.test_name || a.testName,
+          subjectName: a.subject_name || a.subjectName,
+          marksObtained: Number(a.marks_obtained ?? a.marksObtained ?? 0),
+          maxMarks: Number(a.max_marks ?? a.maxMarks ?? 50),
+          percentage: Number(a.percentage ?? 0),
+          topic: a.topic || "",
+          mistakesAnalysis: a.mistakes_analysis || a.mistakesAnalysis || "",
+          followUpTasks: a.follow_up_tasks || a.followUpTasks || "",
+          createdAtTimestamp: a.created_at ? new Date(a.created_at).getTime() : Date.now(),
+        }));
       }
 
       if (!customRes.error && customRes.data && customRes.data.length > 0) {

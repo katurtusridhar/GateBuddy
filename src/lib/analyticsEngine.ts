@@ -8,7 +8,7 @@ import {
   PreparationHealth,
   DayScorePoint,
 } from "./types";
-import { compareDateStrings, addDaysToDateStr } from "./dateUtils";
+import { compareDateStrings, addDaysToDateStr, isSundayDate } from "./dateUtils";
 
 /**
  * Calculates daily execution score and points for a given date.
@@ -24,55 +24,83 @@ export function calculateDailyScore(
 ): DailyExecutionScoreUi {
   const isToday = targetDateStr === currentDateStr;
   const isPast = compareDateStrings(targetDateStr, currentDateStr) < 0;
+  const isSunday = isSundayDate(targetDateStr);
 
   let points = 0;
 
-  for (const task of dayTasks) {
-    const prog = progressMap.get(task.id);
-    const isComplete = prog?.isCompleted === true;
-    if (task.isSundayActivity) {
-      if (isComplete) {
-        if (task.type === "SUNDAY_TEST") {
-          const assessment = assessments.find((a) => a.testDate === targetDateStr);
-          let pct = assessment?.percentage;
-          if (pct === undefined && prog?.notes) {
-            const match = prog.notes.match(/Marks:\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
-            if (match) {
-              const scored = parseFloat(match[1]);
-              const max = parseFloat(match[2]);
-              pct = max > 0 ? (scored / max) * 100 : 100;
-            }
-          }
-          if (pct === undefined) pct = 100;
-          const testPts = Math.min(20, Math.max(0, Math.round((pct / 100) * 20)));
-          points += testPts;
-        } else if (task.type === "SUNDAY_PYQ") {
-          points += 5;
-        } else {
-          points += 5;
-        }
-      } else if (isPast) {
-        // Missed Sunday tasks penalty
-        if (task.type === "SUNDAY_TEST") {
-          points -= 4; // -4 pts penalty for missed Sunday test (20% of 20 max pts)
-        } else {
-          points -= 1; // -1 pt penalty for missed Sunday task
+  if (isSunday || dayTasks.some((t) => t.isSundayActivity)) {
+    // 1. Sunday Test (max 20 pts based on score)
+    const scheduledTest = dayTasks.find((t) => t.type === "SUNDAY_TEST" || (t.isSundayActivity && t.slot === 1));
+    const testProg = progressMap.get("SUNDAY_TEST_" + targetDateStr)
+      || (scheduledTest ? progressMap.get(scheduledTest.id) : undefined)
+      || Array.from(progressMap.values()).find((p) => p.originalDate === targetDateStr && p.taskId.startsWith("SUNDAY_TEST_"));
+    const assessment = assessments.find((a: any) => (a.testDate || a.test_date) === targetDateStr);
+    const isTestComplete = testProg?.isCompleted || !!assessment;
+
+    if (isTestComplete) {
+      let pct = assessment?.percentage;
+      if (pct === undefined && testProg?.notes) {
+        const match = testProg.notes.match(/Marks:\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
+        if (match) {
+          const scored = parseFloat(match[1]);
+          const max = parseFloat(match[2]);
+          pct = max > 0 ? (scored / max) * 100 : 100;
         }
       }
-    } else {
-      if (isComplete) {
+      if (pct === undefined) pct = 100;
+      const testPts = Math.min(20, Math.max(0, Math.round((pct / 100) * 20)));
+      points += testPts;
+    } else if (isPast && (scheduledTest || isSunday)) {
+      points -= 4; // -4 pts penalty for missed Sunday test
+    }
+
+    // 2. Sunday Revision (+5 pts)
+    const revProg = progressMap.get("BOOSTER_REV_" + targetDateStr)
+      || (dayTasks.find((t) => t.isRevision) ? progressMap.get(dayTasks.find((t) => t.isRevision)!.id) : undefined);
+    if (revProg?.isCompleted) {
+      points += 5;
+    } else if (isPast && dayTasks.some((t) => t.isRevision)) {
+      points -= 1;
+    }
+
+    // 3. Sunday PYQ Practice (+5 pts)
+    const scheduledPyq = dayTasks.find((t) => t.type === "SUNDAY_PYQ" || (t.isSundayActivity && t.slot === 2));
+    const pyqProg = progressMap.get("BOOSTER_PS_" + targetDateStr)
+      || (scheduledPyq ? progressMap.get(scheduledPyq.id) : undefined);
+    if (pyqProg?.isCompleted) {
+      points += 5;
+    } else if (isPast && (scheduledPyq || (isSunday && dayTasks.length >= 2))) {
+      points -= 1;
+    }
+
+    // Non-Sunday recovery or catch-up tasks scheduled for today
+    for (const task of dayTasks) {
+      if (!task.isSundayActivity && task.type !== "SUNDAY_TEST" && task.type !== "SUNDAY_PYQ") {
+        const prog = progressMap.get(task.id);
+        if (prog?.isCompleted) {
+          points += 10;
+        } else if (isPast) {
+          points -= 2;
+        }
+      }
+    }
+  } else {
+    // Weekday Point System
+    for (const task of dayTasks) {
+      const prog = progressMap.get(task.id);
+      if (prog?.isCompleted) {
         points += 10;
       } else if (isPast) {
         points -= 2; // Missed penalty on past days
       }
     }
-  }
 
-  // Boosters
-  const revKey = `BOOSTER_REV_${targetDateStr}`;
-  const psKey = `BOOSTER_PS_${targetDateStr}`;
-  if (progressMap.get(revKey)?.isCompleted === true) points += 5;
-  if (progressMap.get(psKey)?.isCompleted === true) points += 5;
+    // Boosters
+    const revKey = `BOOSTER_REV_${targetDateStr}`;
+    const psKey = `BOOSTER_PS_${targetDateStr}`;
+    if (progressMap.get(revKey)?.isCompleted === true) points += 5;
+    if (progressMap.get(psKey)?.isCompleted === true) points += 5;
+  }
 
   // Custom Tasks
   for (const ct of customTasks) {
@@ -136,9 +164,18 @@ export function calculateAdherenceAndForecast(
   let currentBacklog = 0;
 
   for (const task of tasksUpToToday) {
-    const progress = progressMap.get(task.id);
-    if (progress?.isCompleted) {
-      if (progress.completionType === "ON_TIME" || !progress.completionType) {
+    const isSundayTest = task.type === "SUNDAY_TEST";
+    const isSundayPyq = task.type === "SUNDAY_PYQ";
+    const prog = progressMap.get(task.id);
+    const isDone = isSundayTest
+      ? (prog?.isCompleted || progressMap.get("SUNDAY_TEST_" + task.date)?.isCompleted || assessments.some((a: any) => (a.testDate || a.test_date) === task.date))
+      : isSundayPyq
+      ? (prog?.isCompleted || progressMap.get("BOOSTER_PS_" + task.date)?.isCompleted)
+      : (prog?.isCompleted ?? false);
+
+    if (isDone) {
+      const completionType = prog?.completionType || progressMap.get("SUNDAY_TEST_" + task.date)?.completionType || "ON_TIME";
+      if (completionType === "ON_TIME" || !completionType) {
         completedOnTime++;
       } else {
         completedLate++;
