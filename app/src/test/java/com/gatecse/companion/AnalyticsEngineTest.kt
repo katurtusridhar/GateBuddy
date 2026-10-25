@@ -180,4 +180,62 @@ class AnalyticsEngineTest {
         assertTrue(metrics.healthReason.contains("Behind schedule"))
         assertTrue(metrics.recommendedActions.any { it.contains("buffer") })
     }
+
+    @Test
+    fun testSundayPointsTargetHarmonization() {
+        val sundayStr = "2026-10-25"
+        val sundayTasks = listOf(
+            ScheduleTaskEntity(
+                id = "SUN_TEST_01",
+                date = sundayStr,
+                dayOfWeek = "Sun",
+                slot = 1,
+                subject = "Full-Syllabus Mock",
+                type = "SUNDAY_TEST",
+                curNum = 1,
+                totalCount = 49,
+                title = "Sunday Test & Revision",
+                details = "",
+                milestone = "",
+                sourcePage = 1,
+                isBuffer = false,
+                isRevision = false,
+                isSundayActivity = true
+            ),
+            ScheduleTaskEntity(
+                id = "SUN_PYQ_01",
+                date = sundayStr,
+                dayOfWeek = "Sun",
+                slot = 2,
+                subject = "PYQ Practice",
+                type = "SUNDAY_PYQ",
+                curNum = 1,
+                totalCount = 49,
+                title = "Sunday PYQ Practice",
+                details = "",
+                milestone = "",
+                sourcePage = 1,
+                isBuffer = false,
+                isRevision = false,
+                isSundayActivity = true
+            )
+        )
+
+        // User completes Sunday Test (20 pts), Sunday PYQ (5 pts), and Revision Booster (5 pts)
+        val progressMap = mapOf(
+            "SUN_TEST_01" to TaskProgressEntity("SUN_TEST_01", sundayStr, true),
+            "SUN_PYQ_01" to TaskProgressEntity("SUN_PYQ_01", sundayStr, true),
+            "BOOSTER_REV_$sundayStr" to TaskProgressEntity("BOOSTER_REV_$sundayStr", sundayStr, true)
+        )
+
+        val scoreUi = AnalyticsEngine.calculateDailyScore(
+            targetDateStr = sundayStr,
+            currentDateStr = sundayStr,
+            dayTasks = sundayTasks,
+            progressMap = progressMap
+        )
+
+        assertEquals("Sunday Test (20) + PYQ (5) + Booster Revision (5) must equal exactly 30 points", 30, scoreUi.dailyPoints)
+        assertEquals(100, scoreUi.scorePercentage)
+    }
 }

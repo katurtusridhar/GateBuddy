@@ -39,7 +39,11 @@ object AnalyticsEngine {
         for (task in dayTasks) {
             val isComplete = progressMap[task.id]?.isCompleted == true
             if (task.isSundayActivity) {
-                if (isComplete) points += 10
+                if (isComplete) {
+                    if (task.type == "SUNDAY_TEST") points += 20
+                    else if (task.type == "SUNDAY_PYQ") points += 5
+                    else points += 10
+                }
             } else {
                 totalLectures++
                 if (isComplete) {
@@ -195,7 +199,11 @@ object AnalyticsEngine {
             for (t in dTasks) {
                 val done = progressMap[t.id]?.isCompleted == true
                 if (t.isSundayActivity) {
-                    if (done) dayPoints += 10
+                    if (done) {
+                        if (t.type == "SUNDAY_TEST") dayPoints += 20
+                        else if (t.type == "SUNDAY_PYQ") dayPoints += 5
+                        else dayPoints += 10
+                    }
                 } else {
                     if (done) {
                         dayPoints += 10
@@ -247,7 +255,11 @@ object AnalyticsEngine {
             for (t in dTasks) {
                 val done = progressMap[t.id]?.isCompleted == true
                 if (t.isSundayActivity) {
-                    if (done) dPts += 20
+                    if (done) {
+                        if (t.type == "SUNDAY_TEST") dPts += 20
+                        else if (t.type == "SUNDAY_PYQ") dPts += 5
+                        else dPts += 10
+                    }
                 } else {
                     if (done) {
                         dPts += 10

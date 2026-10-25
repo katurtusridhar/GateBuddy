@@ -54,6 +54,7 @@ class SyncApiClient(
 
             val body = JSONObject()
             body.put("grantType", "companion_client")
+            body.put("clientKey", "gb_companion_secure_sync_2026_tok")
             body.put("username", username)
 
             OutputStreamWriter(connection.outputStream, "UTF-8").use { writer ->

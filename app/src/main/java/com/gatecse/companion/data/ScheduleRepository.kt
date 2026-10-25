@@ -1259,9 +1259,11 @@ class ScheduleRepository(
     // Achievements
     fun getAllAchievementsFlow(): Flow<List<AchievementEntity>> = dao.getAllAchievementsFlow()
 
-    // Export & Backup
+    // Export & Backup across all 8 Room database entities
     suspend fun exportDataToJson(): String = withContext(Dispatchers.IO) {
         val root = JSONObject()
+
+        // 1. Task Progress
         val progressList = dao.getAllProgress()
         val pArray = JSONArray()
         for (p in progressList) {
@@ -1269,14 +1271,15 @@ class ScheduleRepository(
                 put("taskId", p.taskId)
                 put("originalDate", p.originalDate)
                 put("isCompleted", p.isCompleted)
-                put("completedAtTimestamp", p.completedAtTimestamp ?: 0L)
-                put("completionType", p.completionType ?: "")
+                put("completedAtTimestamp", p.completedAtTimestamp ?: JSONObject.NULL)
+                put("completionType", p.completionType ?: JSONObject.NULL)
                 put("notes", p.notes)
             }
             pArray.put(obj)
         }
         root.put("progress", pArray)
 
+        // 2. Assessments
         val assessments = dao.getAllAssessments()
         val aArray = JSONArray()
         for (a in assessments) {
@@ -1287,37 +1290,148 @@ class ScheduleRepository(
                 put("marksObtained", a.marksObtained)
                 put("maxMarks", a.maxMarks)
                 put("percentage", a.percentage)
+                put("topic", a.topic)
                 put("mistakesAnalysis", a.mistakesAnalysis)
+                put("followUpTasks", a.followUpTasks)
+                put("questionsAttempted", a.questionsAttempted ?: JSONObject.NULL)
+                put("questionsCorrect", a.questionsCorrect ?: JSONObject.NULL)
+                put("createdAtTimestamp", a.createdAtTimestamp)
             }
             aArray.put(obj)
         }
         root.put("assessments", aArray)
+
+        // 3. DPP Records
+        val dppList = dao.getAllDpp()
+        val dArray = JSONArray()
+        for (d in dppList) {
+            val obj = JSONObject().apply {
+                put("date", d.date)
+                put("subjectCode", d.subjectCode)
+                put("subjectName", d.subjectName)
+                put("topic", d.topic)
+                put("totalQuestions", d.totalQuestions)
+                put("questionsCorrect", d.questionsCorrect)
+                put("accuracyPercentage", d.accuracyPercentage)
+                put("notes", d.notes)
+                put("createdAtTimestamp", d.createdAtTimestamp)
+            }
+            dArray.put(obj)
+        }
+        root.put("dppRecords", dArray)
+
+        // 4. Custom Tasks
+        val customList = dao.getAllCustomTasks()
+        val cArray = JSONArray()
+        for (c in customList) {
+            val obj = JSONObject().apply {
+                put("date", c.date)
+                put("title", c.title)
+                put("subjectCode", c.subjectCode)
+                put("subjectName", c.subjectName)
+                put("isCompleted", c.isCompleted)
+                put("completedAtTimestamp", c.completedAtTimestamp ?: JSONObject.NULL)
+                put("notes", c.notes)
+                put("pointsValue", c.pointsValue)
+            }
+            cArray.put(obj)
+        }
+        root.put("customTasks", cArray)
+
+        // 5. Recovery Assignments
+        val recoveryList = dao.getActiveRecoveries()
+        val rArray = JSONArray()
+        for (r in recoveryList) {
+            val obj = JSONObject().apply {
+                put("taskId", r.taskId)
+                put("originalDate", r.originalDate)
+                put("recoveryDate", r.recoveryDate)
+                put("assignedAtTimestamp", r.assignedAtTimestamp)
+                put("isCompleted", r.isCompleted)
+                put("completedAtTimestamp", r.completedAtTimestamp ?: JSONObject.NULL)
+                put("priorityLevel", r.priorityLevel)
+                put("status", r.status)
+            }
+            rArray.put(obj)
+        }
+        root.put("recoveries", rArray)
+
+        // 6. User Settings
+        val settings = dao.getUserSettings()
+        if (settings != null) {
+            val sObj = JSONObject().apply {
+                put("targetExamDate", settings.targetExamDate ?: JSONObject.NULL)
+                put("targetExamName", settings.targetExamName)
+                put("dailyRecoveryLimit", settings.dailyRecoveryLimit)
+                put("themeMode", settings.themeMode)
+                put("reminderEnabled", settings.reminderEnabled)
+                put("reminderSlot1Hour", settings.reminderSlot1Hour)
+                put("reminderSlot1Minute", settings.reminderSlot1Minute)
+                put("reminderSlot2Hour", settings.reminderSlot2Hour)
+                put("reminderSlot2Minute", settings.reminderSlot2Minute)
+                put("isOnboarded", settings.isOnboarded)
+            }
+            root.put("settings", sObj)
+        }
+
+        // 7. Achievements
+        val achievements = dao.getAllAchievementsList()
+        val achArray = JSONArray()
+        for (ach in achievements) {
+            val obj = JSONObject().apply {
+                put("code", ach.code)
+                put("title", ach.title)
+                put("description", ach.description)
+                put("category", ach.category)
+                put("isUnlocked", ach.isUnlocked)
+                put("unlockedAtTimestamp", ach.unlockedAtTimestamp ?: JSONObject.NULL)
+            }
+            achArray.put(obj)
+        }
+        root.put("achievements", achArray)
+
         root.toString(2)
     }
 
     suspend fun restoreDataFromJson(jsonStr: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val root = JSONObject(jsonStr)
+
+            // 1. Restore Progress
             val pArray = root.optJSONArray("progress")
             if (pArray != null) {
                 for (i in 0 until pArray.length()) {
                     val obj = pArray.getJSONObject(i)
+                    val compAt = if (obj.has("completedAtTimestamp") && !obj.isNull("completedAtTimestamp")) {
+                        obj.getLong("completedAtTimestamp")
+                    } else null
+                    val compType = if (obj.has("completionType") && !obj.isNull("completionType")) {
+                        val s = obj.getString("completionType")
+                        if (s.isNotBlank()) s else null
+                    } else null
+
                     dao.insertOrUpdateProgress(
                         TaskProgressEntity(
                             taskId = obj.getString("taskId"),
                             originalDate = obj.getString("originalDate"),
                             isCompleted = obj.getBoolean("isCompleted"),
-                            completedAtTimestamp = obj.optLong("completedAtTimestamp"),
-                            completionType = obj.optString("completionType"),
-                            notes = obj.optString("notes")
+                            completedAtTimestamp = compAt,
+                            completionType = compType,
+                            notes = obj.optString("notes", "")
                         )
                     )
                 }
             }
+
+            // 2. Restore Assessments
             val aArray = root.optJSONArray("assessments")
             if (aArray != null) {
                 for (i in 0 until aArray.length()) {
                     val obj = aArray.getJSONObject(i)
+                    val qAttempted = if (obj.has("questionsAttempted") && !obj.isNull("questionsAttempted")) obj.getInt("questionsAttempted") else null
+                    val qCorrect = if (obj.has("questionsCorrect") && !obj.isNull("questionsCorrect")) obj.getInt("questionsCorrect") else null
+                    val createdAt = if (obj.has("createdAtTimestamp") && !obj.isNull("createdAtTimestamp")) obj.getLong("createdAtTimestamp") else System.currentTimeMillis()
+
                     dao.insertAssessment(
                         AssessmentResultEntity(
                             testDate = obj.getString("testDate"),
@@ -1326,11 +1440,125 @@ class ScheduleRepository(
                             marksObtained = obj.getDouble("marksObtained"),
                             maxMarks = obj.getDouble("maxMarks"),
                             percentage = obj.getDouble("percentage"),
-                            mistakesAnalysis = obj.optString("mistakesAnalysis")
+                            questionsAttempted = qAttempted,
+                            questionsCorrect = qCorrect,
+                            topic = obj.optString("topic", ""),
+                            mistakesAnalysis = obj.optString("mistakesAnalysis", ""),
+                            followUpTasks = obj.optString("followUpTasks", ""),
+                            createdAtTimestamp = createdAt
                         )
                     )
                 }
             }
+
+            // 3. Restore DPP Records
+            val dArray = root.optJSONArray("dppRecords")
+            if (dArray != null) {
+                for (i in 0 until dArray.length()) {
+                    val obj = dArray.getJSONObject(i)
+                    val createdAt = if (obj.has("createdAtTimestamp") && !obj.isNull("createdAtTimestamp")) obj.getLong("createdAtTimestamp") else System.currentTimeMillis()
+                    dao.insertDpp(
+                        DppRecordEntity(
+                            date = obj.getString("date"),
+                            subjectCode = obj.getString("subjectCode"),
+                            subjectName = obj.getString("subjectName"),
+                            topic = obj.optString("topic", ""),
+                            totalQuestions = obj.getInt("totalQuestions"),
+                            questionsCorrect = obj.getInt("questionsCorrect"),
+                            accuracyPercentage = obj.getDouble("accuracyPercentage"),
+                            notes = obj.optString("notes", ""),
+                            createdAtTimestamp = createdAt
+                        )
+                    )
+                }
+            }
+
+            // 4. Restore Custom Tasks
+            val cArray = root.optJSONArray("customTasks")
+            if (cArray != null) {
+                for (i in 0 until cArray.length()) {
+                    val obj = cArray.getJSONObject(i)
+                    val compAt = if (obj.has("completedAtTimestamp") && !obj.isNull("completedAtTimestamp")) obj.getLong("completedAtTimestamp") else null
+                    dao.insertCustomTask(
+                        CustomTaskEntity(
+                            date = obj.getString("date"),
+                            title = obj.getString("title"),
+                            subjectCode = obj.optString("subjectCode", "GATE"),
+                            subjectName = obj.optString("subjectName", "General / Practice"),
+                            isCompleted = obj.optBoolean("isCompleted", false),
+                            completedAtTimestamp = compAt,
+                            notes = obj.optString("notes", ""),
+                            pointsValue = obj.optInt("pointsValue", 5)
+                        )
+                    )
+                }
+            }
+
+            // 5. Restore Recovery Assignments
+            val rArray = root.optJSONArray("recoveries")
+            if (rArray != null) {
+                for (i in 0 until rArray.length()) {
+                    val obj = rArray.getJSONObject(i)
+                    val compAt = if (obj.has("completedAtTimestamp") && !obj.isNull("completedAtTimestamp")) obj.getLong("completedAtTimestamp") else null
+                    dao.insertRecoveryAssignment(
+                        RecoveryAssignmentEntity(
+                            taskId = obj.getString("taskId"),
+                            originalDate = obj.getString("originalDate"),
+                            recoveryDate = obj.getString("recoveryDate"),
+                            assignedAtTimestamp = obj.optLong("assignedAtTimestamp", System.currentTimeMillis()),
+                            isCompleted = obj.optBoolean("isCompleted", false),
+                            completedAtTimestamp = compAt,
+                            priorityLevel = obj.optInt("priorityLevel", 2),
+                            status = obj.optString("status", "ACTIVE")
+                        )
+                    )
+                }
+            }
+
+            // 6. Restore Settings
+            val sObj = root.optJSONObject("settings")
+            if (sObj != null) {
+                val examDate = if (sObj.has("targetExamDate") && !sObj.isNull("targetExamDate")) sObj.getString("targetExamDate") else null
+                dao.insertOrUpdateUserSettings(
+                    UserSettingsEntity(
+                        id = 1,
+                        targetExamDate = examDate,
+                        targetExamName = sObj.optString("targetExamName", "GATE CSE 2028"),
+                        dailyRecoveryLimit = sObj.optInt("dailyRecoveryLimit", 2),
+                        themeMode = sObj.optString("themeMode", "DARK"),
+                        reminderEnabled = sObj.optBoolean("reminderEnabled", false),
+                        reminderSlot1Hour = sObj.optInt("reminderSlot1Hour", 9),
+                        reminderSlot1Minute = sObj.optInt("reminderSlot1Minute", 0),
+                        reminderSlot2Hour = sObj.optInt("reminderSlot2Hour", 18),
+                        reminderSlot2Minute = sObj.optInt("reminderSlot2Minute", 0),
+                        isOnboarded = sObj.optBoolean("isOnboarded", true)
+                    )
+                )
+            }
+
+            // 7. Restore Achievements
+            val achArray = root.optJSONArray("achievements")
+            if (achArray != null) {
+                val restoredAchs = mutableListOf<AchievementEntity>()
+                for (i in 0 until achArray.length()) {
+                    val obj = achArray.getJSONObject(i)
+                    val unlAt = if (obj.has("unlockedAtTimestamp") && !obj.isNull("unlockedAtTimestamp")) obj.getLong("unlockedAtTimestamp") else null
+                    restoredAchs.add(
+                        AchievementEntity(
+                            code = obj.getString("code"),
+                            title = obj.getString("title"),
+                            description = obj.getString("description"),
+                            category = obj.getString("category"),
+                            isUnlocked = obj.getBoolean("isUnlocked"),
+                            unlockedAtTimestamp = unlAt
+                        )
+                    )
+                }
+                if (restoredAchs.isNotEmpty()) {
+                    dao.insertOrUpdateAchievements(restoredAchs)
+                }
+            }
+
             true
         } catch (e: Exception) {
             false

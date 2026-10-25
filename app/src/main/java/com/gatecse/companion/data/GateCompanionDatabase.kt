@@ -37,7 +37,26 @@ abstract class GateCompanionDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: GateCompanionDatabase? = null
 
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `custom_tasks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `date` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `subjectCode` TEXT NOT NULL,
+                        `subjectName` TEXT NOT NULL,
+                        `isCompleted` INTEGER NOT NULL,
+                        `completedAtTimestamp` INTEGER,
+                        `notes` TEXT NOT NULL,
+                        `pointsValue` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_custom_tasks_date` ON `custom_tasks` (`date`)")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `dpp_records` (
@@ -58,6 +77,13 @@ abstract class GateCompanionDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_1_3 = object : Migration(1, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_1_2.migrate(db)
+                MIGRATION_2_3.migrate(db)
+            }
+        }
+
         fun getInstance(context: Context): GateCompanionDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -65,8 +91,7 @@ abstract class GateCompanionDatabase : RoomDatabase() {
                     GateCompanionDatabase::class.java,
                     "gate_cse_companion.db"
                 )
-                    .addMigrations(MIGRATION_2_3)
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_1_3)
                     .build()
                 INSTANCE = instance
                 instance
