@@ -19,9 +19,9 @@ GateBuddy is a mission-critical web companion and study platform engineered for 
 
 ## 🔐 Credentials & Master Security
 
-- **Username**: `katurtusridhar`
-- **Password**: `Sridhar@758`
-- **Master Security Code**: `oA-THL,UXyh6` (Required to authorize username or password modifications)
+- **Username**: `**********`
+- **Password**: `**********`
+- **Master Security Code**: `**********` (Required to authorize username or password modifications)
 
 ---
 
