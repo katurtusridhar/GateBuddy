@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
@@ -84,6 +85,7 @@ fun SettingsScreen(
     repository: ScheduleRepository,
     currentThemeMode: ThemeMode,
     onThemeModeChanged: (ThemeMode) -> Unit,
+    onNavigateToUpdates: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -453,6 +455,25 @@ fun SettingsScreen(
                     Icon(imageVector = Icons.Default.Widgets, contentDescription = "Refresh", tint = colors.sky, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Sync Home-Screen Widgets", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
+                }
+            }
+        }
+
+        // 8. Software Updates & Version History
+        item {
+            CyberCard(
+                borderHighlight = colors.primary,
+                contentPadding = PaddingValues(14.dp),
+                onClick = onNavigateToUpdates
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(imageVector = Icons.Default.SystemUpdate, contentDescription = "Updates", tint = colors.primary, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Check for Updates & Version History", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary)
                 }
             }
         }

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -57,6 +58,7 @@ import com.gatecse.companion.ui.screens.settings.SettingsScreen
 import com.gatecse.companion.ui.screens.subjects.SubjectsScreen
 import com.gatecse.companion.ui.screens.tests.TestsScreen
 import com.gatecse.companion.ui.screens.today.TodayScreen
+import com.gatecse.companion.updater.UpdateScreen
 import com.gatecse.companion.ui.theme.GateTheme
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -71,6 +73,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Tests : Screen("tests", "Tests & DPP", Icons.AutoMirrored.Filled.Assignment)
     object Achievements : Screen("achievements", "Badges", Icons.Default.EmojiEvents)
     object Settings : Screen("settings", "Settings", Icons.Default.Menu)
+    object Updates : Screen("updates", "Updates", Icons.Default.SystemUpdate)
 }
 
 @Composable
@@ -289,7 +292,14 @@ fun MainNavigation(
                     SettingsScreen(
                         repository = repository,
                         currentThemeMode = currentThemeMode,
-                        onThemeModeChanged = onThemeModeChanged
+                        onThemeModeChanged = onThemeModeChanged,
+                        onNavigateToUpdates = { navController.navigate(Screen.Updates.route) }
+                    )
+                }
+
+                composable(Screen.Updates.route) {
+                    UpdateScreen(
+                        onNavigateBack = { navController.popBackStack() }
                     )
                 }
             }
