@@ -50,7 +50,7 @@ export function AppShell({ children }: AppShellProps) {
       badge: activeBacklogs.length > 0 ? `${activeBacklogs.length}` : null,
     },
     { label: "Analytics", href: "/analytics", icon: BarChart3 },
-    { label: "Tests & PYQ", href: "/tests", icon: ClipboardList },
+    { label: "Tests & DPP", href: "/tests", icon: ClipboardList },
     { label: "Achievements", href: "/achievements", icon: Award },
     { label: "Settings", href: "/settings", icon: Settings },
   ];
@@ -61,7 +61,7 @@ export function AppShell({ children }: AppShellProps) {
     { label: "Calendar", href: "/calendar", icon: Calendar },
     { label: "Subjects", href: "/subjects", icon: BookOpen },
     { label: "Analytics", href: "/analytics", icon: BarChart3 },
-    { label: "Tests", href: "/tests", icon: ClipboardList },
+    { label: "Tests & DPP", href: "/tests", icon: ClipboardList },
     { label: "Settings", href: "/settings", icon: Settings },
   ];
 
@@ -90,7 +90,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#090D16] text-slate-100 font-sans pb-20 lg:pb-0">
+    <div className="flex min-h-screen bg-[#090D16] text-slate-100 font-sans pb-20 lg:pb-0 w-full max-w-full overflow-x-hidden">
       {/* Desktop Sidebar */}
       <aside className="hidden w-64 shrink-0 flex-col border-r border-[#26354F] bg-[#0F172A] p-4 lg:flex">
         {/* Brand Header */}
@@ -183,9 +183,9 @@ export function AppShell({ children }: AppShellProps) {
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col w-full max-w-full min-w-0 overflow-x-hidden">
         {/* Top Navbar */}
-        <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#26354F] bg-[#0F172A]/90 px-4 backdrop-blur-md lg:px-8">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#26354F] bg-[#0F172A]/90 px-3 sm:px-4 backdrop-blur-md lg:px-8 w-full max-w-full">
           <div className="flex items-center gap-3">
             {/* Mobile Brand Logo */}
             <Link
@@ -258,11 +258,11 @@ export function AppShell({ children }: AppShellProps) {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">{children}</main>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 lg:p-8 w-full max-w-full min-w-0">{children}</main>
       </div>
 
-      {/* Mobile Bottom Navigation Bar (Matching Android app's 6 icons) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-[#26354F] bg-[#0F172A]/95 backdrop-blur-lg py-2 px-1 lg:hidden">
+      {/* Mobile Bottom Navigation Bar (Matching Android app's 6 icons, guaranteed 100% responsive without clipping) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 items-center border-t border-[#26354F] bg-[#0F172A]/95 backdrop-blur-lg py-1 px-0.5 lg:hidden w-full max-w-full overflow-hidden">
         {mobileBottomNav.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -272,19 +272,19 @@ export function AppShell({ children }: AppShellProps) {
               key={item.href}
               href={item.href}
               className={clsx(
-                "flex flex-col items-center justify-center rounded-xl px-2.5 py-1 text-[11px] font-semibold transition-all duration-150",
+                "flex flex-col items-center justify-center min-w-0 w-full py-1 text-[10px] font-semibold transition-all duration-150",
                 isActive ? "text-sky-400" : "text-slate-400 hover:text-white"
               )}
             >
               <div
                 className={clsx(
-                  "flex h-8 w-12 items-center justify-center rounded-xl transition-all",
+                  "flex h-7 w-8 sm:h-8 sm:w-11 items-center justify-center rounded-xl transition-all",
                   isActive ? "bg-sky-500/20 text-sky-300 border border-sky-500/30" : ""
                 )}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className="h-4 w-4 sm:h-5 sm:w-5 shrink-0" />
               </div>
-              <span className="mt-0.5 tracking-tight">{item.label}</span>
+              <span className="mt-0.5 tracking-tight truncate w-full text-center px-0.5">{item.label}</span>
             </Link>
           );
         })}

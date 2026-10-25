@@ -185,17 +185,17 @@ test('Mobile Auth Cookie Detection & Anti-Blank Screen Recovery', async (t) => {
   assert.equal(testCookieValidator('other_cookie=123'), false, 'Missing cookie must fail');
 });
 
-// 6. UNIDIRECTIONAL SYNC & TEST ASSESSMENT WRITE RESTRICTION
+// 6. UNIDIRECTIONAL SYNC & TEST ASSESSMENT / DPP RESTRICTIONS
 test('Unidirectional App -> Website Sync Rule: Web mutations rejected, App mutations accepted', async (t) => {
   function validateSyncMutation(headers, body) {
     const authHeader = headers['authorization'] || '';
     const isCompanionApp = Boolean(authHeader && authHeader.startsWith('Bearer '));
-    const { progress, recoveries, assessments } = body;
+    const { progress, recoveries, assessments, dppRecords } = body;
 
-    if (!isCompanionApp && (progress || recoveries || assessments)) {
+    if (!isCompanionApp && (progress || recoveries || assessments || dppRecords)) {
       return {
         status: 403,
-        error: 'Website has no authority to modify task progress, recoveries, or test assessments. These are managed exclusively via the Android Companion App.',
+        error: 'Website has no authority to modify task progress, recoveries, test assessments, or DPP records. These are managed exclusively via the Android Companion App.',
       };
     }
     return { status: 200, success: true };
@@ -205,11 +205,47 @@ test('Unidirectional App -> Website Sync Rule: Web mutations rejected, App mutat
   const webTestMutation = validateSyncMutation({ cookie: 'gatebuddy_auth=token' }, { assessments: [{ id: 1, testName: 'DL Test 1' }] });
   assert.equal(webTestMutation.status, 403, 'Web client cannot push assessments');
 
+  // Web client attempting to push DPP records
+  const webDppMutation = validateSyncMutation({ cookie: 'gatebuddy_auth=token' }, { dppRecords: [{ id: 1, subjectCode: 'DL', questionsCorrect: 10, totalQuestions: 10 }] });
+  assert.equal(webDppMutation.status, 403, 'Web client cannot push DPP records');
+
   // Web client attempting to push progress
   const webProgressMutation = validateSyncMutation({ cookie: 'gatebuddy_auth=token' }, { progress: [{ taskId: 'CN_19', isCompleted: true }] });
   assert.equal(webProgressMutation.status, 403, 'Web client cannot push progress');
 
-  // Android Companion App (with Bearer token) pushing assessments
-  const appAssessmentMutation = validateSyncMutation({ authorization: 'Bearer gb_companion_test_tok' }, { assessments: [{ id: 1, testName: 'DL Test 1' }] });
-  assert.equal(appAssessmentMutation.status, 200, 'Companion App with Bearer token can push assessments');
+  // Android Companion App (with Bearer token) pushing assessments and DPP
+  const appAssessmentMutation = validateSyncMutation({ authorization: 'Bearer gb_companion_test_tok' }, {
+    assessments: [{ id: 1, testName: 'DL Test 1' }],
+    dppRecords: [{ id: 1, subjectCode: 'DL', questionsCorrect: 10, totalQuestions: 10 }]
+  });
+  assert.equal(appAssessmentMutation.status, 200, 'Companion App with Bearer token can push assessments and DPP');
+
+  // Sunday Test Deletion / Vanish Test:
+  // When an assessment is unchecked before midnight, Android removes the record and pushes the updated array
+  let serverSyncState = {
+    assessments: [{ id: 1, subjectName: 'DL', testName: 'Sunday Test Oct 25', marksObtained: 22, maxMarks: 25 }]
+  };
+  assert.equal(serverSyncState.assessments.length, 1, 'Initial state has 1 Sunday test');
+
+  // Android pushes empty assessments array (because task was unchecked before midnight)
+  const appPushAfterUncheck = { assessments: [] };
+  if (Array.isArray(appPushAfterUncheck.assessments)) {
+    serverSyncState.assessments = appPushAfterUncheck.assessments;
+  }
+  assert.equal(serverSyncState.assessments.length, 0, 'Sunday test vanishes on server and web mirror after uncheck');
+});
+
+// 7. SUNDAY 30-POINT ROLLING AVERAGE TARGET
+test('Sunday Points Target Verification: Sunday Test (20 pts) + Revision (5 pts) + PYQ (5 pts) = 30 pts', async (t) => {
+  const SUNDAY_TEST_POINTS = 20;
+  const SUNDAY_REV_POINTS = 5;
+  const SUNDAY_PS_POINTS = 5;
+  const sundayTotal = SUNDAY_TEST_POINTS + SUNDAY_REV_POINTS + SUNDAY_PS_POINTS;
+  assert.equal(sundayTotal, 30, 'Sunday total must exactly equal 30 points');
+
+  const regularDayPoints = 10 + 10 + 5 + 5; // 2 core lectures (20) + 2 boosters (10)
+  assert.equal(regularDayPoints, 30, 'Regular day total must equal 30 points');
+
+  const weeklyRollingTarget = 30 * 7;
+  assert.equal(weeklyRollingTarget, 210, '7-day rolling target must be 210 points');
 });

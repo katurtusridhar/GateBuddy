@@ -85,10 +85,10 @@ export default function SettingsPage() {
 
         {/* Master Code Security & Credentials Section */}
         <CyberCard glow="amber">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <Shield className="h-4 w-4 text-amber-400" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Shield className="h-4 w-4 text-amber-400 shrink-0" />
                 <h3 className="text-sm font-bold text-white">Security &amp; Account Credentials</h3>
                 <span className="rounded-md border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-400">
                   MASTER CODE PROTECTED
@@ -106,7 +106,7 @@ export default function SettingsPage() {
                 setNewUsernameInput(credentials.username);
                 setShowSecurityModal(true);
               }}
-              className="flex items-center gap-1.5 rounded-xl border border-amber-500/50 bg-amber-500/20 px-3.5 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-500/30 hover:text-white shrink-0"
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-amber-500/50 bg-amber-500/20 px-3.5 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-500/30 hover:text-white w-full sm:w-auto shrink-0"
             >
               <KeyRound className="h-4 w-4" />
               <span>Modify Credentials</span>

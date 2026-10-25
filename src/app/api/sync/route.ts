@@ -16,6 +16,7 @@ const serverSyncState = {
   progress: [] as any[],
   recoveries: [] as any[],
   assessments: [] as any[],
+  dppRecords: [] as any[],
   customTasks: [] as any[],
   settings: {
     id: 1,
@@ -184,19 +185,19 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { progress, recoveries, assessments, customTasks, settings, achievements, credentials } = body;
+    const { progress, recoveries, assessments, dppRecords, customTasks, settings, achievements, credentials } = body;
 
     // Unidirectional App -> Website Sync Model:
-    // ONLY the Android Companion App (Bearer token authenticated) has authority to mutate task progress, recoveries, and assessments.
-    // The website acts as a read-only replica and is forbidden from modifying task completions, recoveries, or test assessments.
+    // ONLY the Android Companion App (Bearer token authenticated) has authority to mutate task progress, recoveries, assessments, and DPP records.
+    // The website acts as a read-only replica and is forbidden from modifying task completions, recoveries, test assessments, or DPP records.
     const authHeader = req.headers.get("authorization");
     const isCompanionApp = Boolean(authHeader && authHeader.startsWith("Bearer "));
 
-    if (!isCompanionApp && (progress || recoveries || assessments)) {
+    if (!isCompanionApp && (progress || recoveries || assessments || dppRecords)) {
       return NextResponse.json(
         {
           status: "forbidden",
-          message: "Website has no authority to modify task progress, recoveries, or test assessments. These are managed exclusively via the Android Companion App.",
+          message: "Website has no authority to modify task progress, recoveries, test assessments, or DPP records. These are managed exclusively via the Android Companion App.",
         },
         { status: 403 }
       );
@@ -255,13 +256,14 @@ export async function POST(req: NextRequest) {
       serverSyncState.recoveries = Array.from(existingMap.values());
     }
 
-    // Assessments
+    // Assessments (authoritative replace from Android Companion App)
     if (Array.isArray(assessments)) {
-      const existingMap = new Map(serverSyncState.assessments.map((a) => [a.id || `${a.testDate}_${a.testName}`, a]));
-      for (const a of assessments) {
-        existingMap.set(a.id || `${a.testDate}_${a.testName}`, a);
-      }
-      serverSyncState.assessments = Array.from(existingMap.values());
+      serverSyncState.assessments = assessments;
+    }
+
+    // DPP Records (authoritative replace from Android Companion App)
+    if (Array.isArray(dppRecords)) {
+      serverSyncState.dppRecords = dppRecords;
     }
 
     if (Array.isArray(customTasks)) {

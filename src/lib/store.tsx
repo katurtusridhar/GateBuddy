@@ -6,6 +6,7 @@ import {
   TaskProgress,
   RecoveryAssignment,
   AssessmentResult,
+  DppRecord,
   Achievement,
   CustomTask,
   UserSettings,
@@ -124,6 +125,7 @@ interface AppContextType {
   progress: Map<string, TaskProgress>;
   recoveries: RecoveryAssignment[];
   assessments: AssessmentResult[];
+  dppList: DppRecord[];
   customTasks: CustomTask[];
   settings: UserSettings;
   achievements: Achievement[];
@@ -187,6 +189,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   });
   const [recoveries, setRecoveries] = useState<RecoveryAssignment[]>(INITIAL_RECOVERIES_LIST);
   const [assessments, setAssessments] = useState<AssessmentResult[]>([]);
+  const [dppList, setDppList] = useState<DppRecord[]>([]);
   const [customTasks, setCustomTasks] = useState<CustomTask[]>([]);
   const [achievements, setAchievements] = useState<Achievement[]>(INITIAL_ACHIEVEMENTS);
   const [settings, setSettings] = useState<UserSettings>({
@@ -214,6 +217,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const recoveriesRef = useRef<RecoveryAssignment[]>(recoveries);
   const customTasksRef = useRef<CustomTask[]>(customTasks);
   const assessmentsRef = useRef<AssessmentResult[]>(assessments);
+  const dppListRef = useRef<DppRecord[]>(dppList);
   const achievementsRef = useRef<Achievement[]>(achievements);
   const settingsRef = useRef<UserSettings>(settings);
   const credentialsRef = useRef<UserCredentials>(credentials);
@@ -223,6 +227,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { recoveriesRef.current = recoveries; }, [recoveries]);
   useEffect(() => { customTasksRef.current = customTasks; }, [customTasks]);
   useEffect(() => { assessmentsRef.current = assessments; }, [assessments]);
+  useEffect(() => { dppListRef.current = dppList; }, [dppList]);
   useEffect(() => { achievementsRef.current = achievements; }, [achievements]);
   useEffect(() => { settingsRef.current = settings; }, [settings]);
   useEffect(() => { credentialsRef.current = credentials; }, [credentials]);
@@ -247,7 +252,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     channel.onmessage = (event) => {
       const msg = event.data;
       if (msg?.type === "REMOTE_MUTATION" && msg.payload) {
-        const { progressArr, recs, assess, customs, stt, creds } = msg.payload;
+        const { progressArr, recs, assess, dpps, customs, stt, creds } = msg.payload;
         if (progressArr) {
           const map = new Map<string, TaskProgress>();
           progressArr.forEach((p: TaskProgress) => map.set(p.taskId, p));
@@ -255,6 +260,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }
         if (recs) setRecoveries(recs);
         if (assess) setAssessments(assess);
+        if (dpps) setDppList(dpps);
         if (customs) setCustomTasks(customs);
         if (stt) setSettings(stt);
         if (creds) setCredentials(creds);
@@ -353,6 +359,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const savedAssessments = localStorage.getItem(`${STORAGE_KEY_PREFIX}assessments`);
       if (savedAssessments) setAssessments(JSON.parse(savedAssessments));
 
+      const savedDpp = localStorage.getItem(`${STORAGE_KEY_PREFIX}dpp_records`);
+      if (savedDpp) setDppList(JSON.parse(savedDpp));
+
       const savedCustom = localStorage.getItem(`${STORAGE_KEY_PREFIX}custom_tasks`);
       if (savedCustom) setCustomTasks(JSON.parse(savedCustom));
 
@@ -376,6 +385,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(`${STORAGE_KEY_PREFIX}progress`, JSON.stringify(Array.from(progress.values())));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}recoveries`, JSON.stringify(recoveries));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}assessments`, JSON.stringify(assessments));
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}dpp_records`, JSON.stringify(dppList));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}custom_tasks`, JSON.stringify(customTasks));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}settings`, JSON.stringify(settings));
       localStorage.setItem(`${STORAGE_KEY_PREFIX}achievements`, JSON.stringify(achievements));
@@ -386,6 +396,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         progressArr: Array.from(progress.values()),
         recs: recoveries,
         assess: assessments,
+        dpps: dppList,
         customs: customTasks,
         stt: settings,
         creds: credentials,
@@ -393,7 +404,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.warn("Error saving to local storage", e);
     }
-  }, [progress, recoveries, assessments, customTasks, settings, achievements, user, credentials, isLoaded, broadcastChange]);
+  }, [progress, recoveries, assessments, dppList, customTasks, settings, achievements, user, credentials, isLoaded, broadcastChange]);
 
   // Unidirectional App -> Website Sync:
   // The website acts as a pure read-only mirror/replica of the Android App.
@@ -426,9 +437,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             recoveriesRef.current = result.data.recoveries;
             setRecoveries(result.data.recoveries);
           }
-          if (Array.isArray(result.data.assessments) && result.data.assessments.length > 0) {
+          if (Array.isArray(result.data.assessments)) {
             setAssessments(result.data.assessments);
             assessmentsRef.current = result.data.assessments;
+          }
+
+          if (Array.isArray(result.data.dppRecords)) {
+            setDppList(result.data.dppRecords);
+            dppListRef.current = result.data.dppRecords;
+            try {
+              localStorage.setItem(`${STORAGE_KEY_PREFIX}dpp_records`, JSON.stringify(result.data.dppRecords));
+            } catch {}
           }
           if (Array.isArray(result.data.customTasks) && result.data.customTasks.length > 0) {
             setCustomTasks(result.data.customTasks);
@@ -488,6 +507,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (Array.isArray(result.data.assessments)) {
             setAssessments(result.data.assessments);
             assessmentsRef.current = result.data.assessments;
+          }
+
+          if (Array.isArray(result.data.dppRecords)) {
+            setDppList(result.data.dppRecords);
+            dppListRef.current = result.data.dppRecords;
+            try {
+              localStorage.setItem(`${STORAGE_KEY_PREFIX}dpp_records`, JSON.stringify(result.data.dppRecords));
+            } catch {}
           }
 
           if (Array.isArray(result.data.customTasks)) {
@@ -698,7 +725,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           completedAtTimestamp: testProg?.completedAtTimestamp,
           completionType: testProg?.completionType,
           notes: testProg?.notes || "",
-          pointsValue: 10,
+          pointsValue: 20,
           isAssignedForRecovery: false,
           isFuture,
           isPast,
@@ -1368,6 +1395,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         progress,
         recoveries,
         assessments,
+        dppList,
         customTasks,
         settings,
         achievements,

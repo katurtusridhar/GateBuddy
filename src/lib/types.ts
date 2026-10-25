@@ -87,6 +87,20 @@ export interface AssessmentResult {
   updatedAt?: string;
 }
 
+export interface DppRecord {
+  id: number;
+  date: string;
+  subjectCode: string;
+  subjectName: string;
+  topic?: string;
+  totalQuestions: number;
+  questionsCorrect: number;
+  accuracyPercentage: number;
+  notes?: string;
+  createdAtTimestamp: number;
+  updatedAt?: string;
+}
+
 export interface Achievement {
   code: string;
   title: string;

@@ -27,7 +27,7 @@ export function calculateDailyScore(
   for (const task of dayTasks) {
     const isComplete = progressMap.get(task.id)?.isCompleted === true;
     if (task.isSundayActivity) {
-      if (isComplete) points += 10;
+      if (isComplete) points += 20;
     } else {
       if (isComplete) {
         points += 10;
