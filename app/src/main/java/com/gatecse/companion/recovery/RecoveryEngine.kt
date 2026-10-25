@@ -23,7 +23,7 @@ class RecoveryEngine(private val dao: ScheduleDao) {
     ): List<RecoveryAssignmentEntity> {
         val today = LocalDate.parse(todayDateStr, dateFormatter)
         val allProgress = dao.getAllProgress().associateBy { it.taskId }
-        val existingActiveRecoveries = dao.getActiveRecoveries()
+        val existingActiveRecoveries = dao.getAllRecoveries()
 
         for (rec in existingActiveRecoveries) {
             // Keep completed recoveries intact with COMPLETED status

@@ -47,7 +47,7 @@ class SyncRepository(
 
             // PHASE 1: Gather current local Room records
             val allProgress = dao.getAllProgress()
-            val allRecoveries = dao.getActiveRecoveries()
+            val allRecoveries = dao.getAllRecoveries()
             val allAssessments = dao.getAllAssessments()
             val allDpp = dao.getAllDpp()
             val allCustomTasks = dao.getAllCustomTasks()

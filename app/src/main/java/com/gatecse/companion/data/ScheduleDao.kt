@@ -87,6 +87,9 @@ interface ScheduleDao {
     @Query("SELECT * FROM recovery_assignments WHERE status IN ('ACTIVE', 'MANUAL_CONFIRMED') AND isCompleted = 0 ORDER BY recoveryDate ASC, priorityLevel ASC")
     suspend fun getActiveRecoveries(): List<RecoveryAssignmentEntity>
 
+    @Query("SELECT * FROM recovery_assignments ORDER BY recoveryDate ASC, priorityLevel ASC")
+    suspend fun getAllRecoveries(): List<RecoveryAssignmentEntity>
+
     @Query("SELECT * FROM recovery_assignments WHERE recoveryDate = :date AND status IN ('ACTIVE', 'MANUAL_CONFIRMED', 'COMPLETED')")
     suspend fun getRecoveriesForDate(date: String): List<RecoveryAssignmentEntity>
 
