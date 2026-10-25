@@ -2,6 +2,8 @@
 // Compatible with both Node.js API routes and Next.js Edge Middleware
 
 import { getSupabaseServiceClient } from "./supabase/server";
+import { createClient } from "@supabase/supabase-js";
+import { supabaseUrl, supabaseAnonKey } from "./supabase/client";
 
 export const AUTH_COOKIE_NAME = "gatebuddy_auth";
 export const CLIENT_API_KEY = process.env.GATEBUDDY_CLIENT_KEY || "gb_companion_secure_sync_2026_tok";
@@ -368,7 +370,7 @@ export async function getDeterministicUserUuid(username: string): Promise<string
 export async function resolveSupabaseUserId(
   supabaseClient: any,
   username: string
-): Promise<{ resolved: boolean; userId?: string; error?: string }> {
+): Promise<{ resolved: boolean; userId?: string; error?: string; dbClient?: any }> {
   if (!supabaseClient) {
     return { resolved: false, error: "Supabase client not initialized" };
   }
@@ -436,6 +438,7 @@ export async function resolveSupabaseUserId(
     }
 
     // 3b. If user ID not yet acquired, authenticate or provision via GoTrue client API
+    let userAccessToken: string | null = null;
     if (!authUserId && supabaseClient.auth?.signInWithPassword) {
       for (const email of candidateEmails) {
         try {
@@ -445,6 +448,7 @@ export async function resolveSupabaseUserId(
           });
           if (signInData?.user?.id) {
             authUserId = signInData.user.id;
+            userAccessToken = signInData.session?.access_token || null;
             break;
           }
         } catch {}
@@ -462,15 +466,35 @@ export async function resolveSupabaseUserId(
           });
           if (signUpData?.user?.id) {
             authUserId = signUpData.user.id;
+            userAccessToken = signUpData.session?.access_token || null;
           }
         } catch {}
+      }
+    }
+
+    let activeDbClient = supabaseClient;
+    if (userAccessToken && !supabaseUrl.includes("placeholder")) {
+      try {
+        activeDbClient = createClient(supabaseUrl, supabaseAnonKey, {
+          global: {
+            headers: {
+              Authorization: `Bearer ${userAccessToken}`,
+            },
+          },
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+          },
+        });
+      } catch (clientErr: any) {
+        console.warn("User-scoped client creation:", clientErr?.message);
       }
     }
 
     // 4. If genuine GoTrue user ID is acquired, persist to public.user_profiles
     if (authUserId) {
       try {
-        await supabaseClient.from("user_profiles").upsert(
+        await activeDbClient.from("user_profiles").upsert(
           {
             id: authUserId,
             email: primaryEmail,
@@ -486,7 +510,7 @@ export async function resolveSupabaseUserId(
       } catch (err: any) {
         console.warn("user_profiles automatic upsert:", err?.message);
       }
-      return { resolved: true, userId: authUserId };
+      return { resolved: true, userId: authUserId, dbClient: activeDbClient };
     }
 
     // 5. Fallback: use deterministic RFC 4122 UUID for verified username

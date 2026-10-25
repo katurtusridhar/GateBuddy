@@ -78,21 +78,22 @@ export async function GET(req: NextRequest) {
         dbErrors.push({ table: "user_profiles", err: userRes.error });
       } else {
         const userUuid = userRes.userId;
+        const targetClient = userRes.dbClient || dbClient;
         const [progRes, recRes, assessRes, customRes, achRes, dppRes] = await Promise.all([
-          dbClient.from("task_progress").select("*").eq("user_id", userUuid),
-          dbClient.from("recovery_assignments").select("*").eq("user_id", userUuid),
-          dbClient.from("assessment_results").select("*").eq("user_id", userUuid),
-          dbClient.from("custom_tasks").select("*").eq("user_id", userUuid),
+          targetClient.from("task_progress").select("*").eq("user_id", userUuid),
+          targetClient.from("recovery_assignments").select("*").eq("user_id", userUuid),
+          targetClient.from("assessment_results").select("*").eq("user_id", userUuid),
+          targetClient.from("custom_tasks").select("*").eq("user_id", userUuid),
           (async () => {
             try {
-              return await dbClient.from("user_achievements").select("*").eq("user_id", userUuid);
+              return await targetClient.from("user_achievements").select("*").eq("user_id", userUuid);
             } catch {
               return { data: null, error: null };
             }
           })(),
           (async () => {
             try {
-              return await dbClient.from("dpp_records").select("*").eq("user_id", userUuid);
+              return await targetClient.from("dpp_records").select("*").eq("user_id", userUuid);
             } catch {
               return { data: null, error: null };
             }
@@ -105,7 +106,7 @@ export async function GET(req: NextRequest) {
       if (customRes.error) dbErrors.push({ table: "custom_tasks", err: customRes.error.message });
 
       if (!progRes.error && Array.isArray(progRes.data)) {
-        serverSyncState.progress = progRes.data.map((p) => {
+        serverSyncState.progress = progRes.data.map((p: any) => {
           if (p.updated_at) {
             const t = new Date(p.updated_at).getTime();
             if (t > maxDbTimestamp) maxDbTimestamp = t;
@@ -123,7 +124,7 @@ export async function GET(req: NextRequest) {
       }
 
       if (!recRes.error && Array.isArray(recRes.data)) {
-        serverSyncState.recoveries = recRes.data.map((r) => {
+        serverSyncState.recoveries = recRes.data.map((r: any) => {
           if (r.updated_at) {
             const t = new Date(r.updated_at).getTime();
             if (t > maxDbTimestamp) maxDbTimestamp = t;
@@ -277,6 +278,7 @@ export async function POST(req: NextRequest) {
     const dbClient = getSupabaseServiceClient();
     const isDbActive = Boolean(dbClient);
     let resolvedUserUuid: string | null = null;
+    let activeTargetClient: any = dbClient;
 
     // If Supabase is active, resolve user identity upfront and enforce multi-tenant ownership
     if (isDbActive && dbClient) {
@@ -292,6 +294,7 @@ export async function POST(req: NextRequest) {
         );
       }
       resolvedUserUuid = userRes.userId;
+      activeTargetClient = userRes.dbClient || dbClient;
 
       // Check all incoming entities for cross-user tampering
       const entityGroups = [
@@ -441,7 +444,7 @@ export async function POST(req: NextRequest) {
             notes: p.notes || "",
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await dbClient.from("task_progress").upsert(rows, { onConflict: "user_id,task_id" });
+          const { error } = await activeTargetClient.from("task_progress").upsert(rows, { onConflict: "user_id,task_id" });
           if (error) {
             console.warn("Supabase task_progress upsert error:", error.message);
             dbErrors.push({ table: "task_progress", error: error.message });
@@ -459,7 +462,7 @@ export async function POST(req: NextRequest) {
             status: r.status,
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await dbClient.from("recovery_assignments").upsert(rows, { onConflict: "user_id,task_id" });
+          const { error } = await activeTargetClient.from("recovery_assignments").upsert(rows, { onConflict: "user_id,task_id" });
           if (error) {
             console.warn("Supabase recovery_assignments upsert error:", error.message);
             dbErrors.push({ table: "recovery_assignments", error: error.message });
@@ -476,7 +479,7 @@ export async function POST(req: NextRequest) {
               unlocked_at: a.unlockedAtTimestamp ? new Date(a.unlockedAtTimestamp).toISOString() : new Date().toISOString(),
             }));
           if (rows.length > 0) {
-            const { error } = await dbClient.from("user_achievements").upsert(rows, { onConflict: "user_id,code" });
+            const { error } = await activeTargetClient.from("user_achievements").upsert(rows, { onConflict: "user_id,code" });
             if (error) {
               console.warn("Supabase user_achievements upsert error:", error.message);
               dbErrors.push({ table: "user_achievements", error: error.message });
@@ -485,7 +488,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (Array.isArray(assessments)) {
-          await dbClient.from("assessment_results").delete().eq("user_id", userUuid);
+          await activeTargetClient.from("assessment_results").delete().eq("user_id", userUuid);
           if (assessments.length > 0) {
             const rows = assessments.map((a: any) => ({
               user_id: userUuid,
@@ -502,7 +505,7 @@ export async function POST(req: NextRequest) {
               follow_up_tasks: a.followUpTasks || "",
               updated_at: new Date(mutationTimestamp).toISOString(),
             }));
-            const { error } = await dbClient.from("assessment_results").insert(rows);
+            const { error } = await activeTargetClient.from("assessment_results").insert(rows);
             if (error) {
               console.warn("Supabase assessment_results insert error:", error.message);
               dbErrors.push({ table: "assessment_results", error: error.message });
@@ -511,7 +514,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (Array.isArray(dppRecords)) {
-          await dbClient.from("dpp_records").delete().eq("user_id", userUuid);
+          await activeTargetClient.from("dpp_records").delete().eq("user_id", userUuid);
           if (dppRecords.length > 0) {
             const rows = dppRecords.map((d: any) => ({
               user_id: userUuid,
@@ -526,7 +529,7 @@ export async function POST(req: NextRequest) {
               created_at: d.createdAtTimestamp ? new Date(d.createdAtTimestamp).toISOString() : new Date().toISOString(),
               updated_at: new Date(mutationTimestamp).toISOString(),
             }));
-            const { error } = await dbClient.from("dpp_records").insert(rows);
+            const { error } = await activeTargetClient.from("dpp_records").insert(rows);
             if (error) {
               console.warn("Supabase dpp_records insert error:", error.message);
               dbErrors.push({ table: "dpp_records", error: error.message });
@@ -535,7 +538,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (Array.isArray(customTasks)) {
-          await dbClient.from("custom_tasks").delete().eq("user_id", userUuid);
+          await activeTargetClient.from("custom_tasks").delete().eq("user_id", userUuid);
           if (customTasks.length > 0) {
             const rows = customTasks.map((c: any) => ({
               user_id: userUuid,
@@ -549,7 +552,7 @@ export async function POST(req: NextRequest) {
               points_value: c.pointsValue || 5,
               updated_at: new Date(mutationTimestamp).toISOString(),
             }));
-            const { error } = await dbClient.from("custom_tasks").insert(rows);
+            const { error } = await activeTargetClient.from("custom_tasks").insert(rows);
             if (error) {
               console.warn("Supabase custom_tasks insert error:", error.message);
               dbErrors.push({ table: "custom_tasks", error: error.message });
