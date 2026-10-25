@@ -143,7 +143,7 @@ export async function verifyRequestAuthorization(req: Request): Promise<boolean>
 
 /**
  * Generates a deterministic RFC 4122 compliant UUID from a username.
- * Ensures consistent multi-tenant user_id mapping across serverless cold starts.
+ * Useful for in-memory or namespaced isolation.
  */
 export async function getDeterministicUserUuid(username: string): Promise<string> {
   const enc = new TextEncoder();
@@ -154,6 +154,53 @@ export async function getDeterministicUserUuid(username: string): Promise<string
   hex[6] = ((hashArray[6] & 0x0f) | 0x50).toString(16).padStart(2, "0");
   hex[8] = ((hashArray[8] & 0x3f) | 0x80).toString(16).padStart(2, "0");
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+}
+
+/**
+ * Resolves the authenticated username to the genuine Supabase auth.users.id UUID.
+ *
+ * In Supabase PostgreSQL, user-owned tables enforce:
+ *   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+ *
+ * A synthetic SHA-256 hash or arbitrary UUID will violate this foreign key constraint
+ * unless an actual record exists in auth.users with that exact ID.
+ * This resolver queries user_profiles for the user's authentic GoTrue user ID.
+ */
+export async function resolveSupabaseUserId(
+  supabaseClient: any,
+  username: string
+): Promise<{ resolved: boolean; userId?: string; error?: string }> {
+  if (!supabaseClient) {
+    return { resolved: false, error: "Supabase client not initialized" };
+  }
+
+  try {
+    const cleanUser = username.trim().toLowerCase();
+    const email = cleanUser.includes("@") ? cleanUser : `${cleanUser}@gatebuddy.com`;
+
+    // 1. Look up user profile by email
+    const { data: profile, error } = await supabaseClient
+      .from("user_profiles")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (profile && profile.id) {
+      return { resolved: true, userId: profile.id };
+    }
+
+    if (error) {
+      return { resolved: false, error: `user_profiles query failed: ${error.message}` };
+    }
+
+    // 2. Profile not found -> user is not provisioned in Supabase
+    return {
+      resolved: false,
+      error: `User '${username}' (${email}) does not have an active record in user_profiles / auth.users. Foreign key cannot be satisfied without GoTrue provisioning.`,
+    };
+  } catch (err: any) {
+    return { resolved: false, error: err?.message || "Failed to resolve Supabase user ID" };
+  }
 }
 
 /**

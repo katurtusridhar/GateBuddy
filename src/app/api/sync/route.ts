@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import {
   getAuthorizedUser,
-  getDeterministicUserUuid,
+  resolveSupabaseUserId,
   sanitizeSyncState,
   updateServerCredentials,
   verifyMasterCode,
@@ -58,30 +58,34 @@ export async function GET(req: NextRequest) {
   let maxDbTimestamp = 0;
   const dbErrors: any[] = [];
 
-  // If Supabase is configured, fetch persistent records from PostgreSQL filtered by user ownership
+  // If Supabase is configured, fetch persistent records from PostgreSQL filtered by verified user identity
   if (isSupabaseConfigured) {
     try {
-      const userUuid = await getDeterministicUserUuid(auth.username);
-      const [progRes, recRes, assessRes, customRes, achRes, dppRes] = await Promise.all([
-        supabase.from("task_progress").select("*").eq("user_id", userUuid),
-        supabase.from("recovery_assignments").select("*").eq("user_id", userUuid),
-        supabase.from("assessment_results").select("*").eq("user_id", userUuid),
-        supabase.from("custom_tasks").select("*").eq("user_id", userUuid),
-        (async () => {
-          try {
-            return await supabase.from("user_achievements").select("*").eq("user_id", userUuid);
-          } catch {
-            return { data: null, error: null };
-          }
-        })(),
-        (async () => {
-          try {
-            return await supabase.from("dpp_records").select("*");
-          } catch {
-            return { data: null, error: null };
-          }
-        })(),
-      ]);
+      const userRes = await resolveSupabaseUserId(supabase, auth.username);
+      if (!userRes.resolved || !userRes.userId) {
+        dbErrors.push({ table: "user_profiles", err: userRes.error });
+      } else {
+        const userUuid = userRes.userId;
+        const [progRes, recRes, assessRes, customRes, achRes, dppRes] = await Promise.all([
+          supabase.from("task_progress").select("*").eq("user_id", userUuid),
+          supabase.from("recovery_assignments").select("*").eq("user_id", userUuid),
+          supabase.from("assessment_results").select("*").eq("user_id", userUuid),
+          supabase.from("custom_tasks").select("*").eq("user_id", userUuid),
+          (async () => {
+            try {
+              return await supabase.from("user_achievements").select("*").eq("user_id", userUuid);
+            } catch {
+              return { data: null, error: null };
+            }
+          })(),
+          (async () => {
+            try {
+              return await supabase.from("dpp_records").select("*");
+            } catch {
+              return { data: null, error: null };
+            }
+          })(),
+        ]);
 
       if (progRes.error) dbErrors.push({ table: "task_progress", err: progRes.error.message });
       if (recRes.error) dbErrors.push({ table: "recovery_assignments", err: recRes.error.message });
@@ -151,6 +155,7 @@ export async function GET(req: NextRequest) {
 
       if (dppRes && !dppRes.error && dppRes.data && dppRes.data.length > 0) {
         serverSyncState.dppRecords = dppRes.data;
+      }
       }
 
       if (maxDbTimestamp > 0) {
@@ -337,7 +342,20 @@ export async function POST(req: NextRequest) {
     // If Supabase is configured, persist all modified entities to PostgreSQL
     if (isSupabaseConfigured) {
       const dbErrors: any[] = [];
-      const userUuid = await getDeterministicUserUuid(auth.username);
+      const userRes = await resolveSupabaseUserId(supabase, auth.username);
+
+      if (!userRes.resolved || !userRes.userId) {
+        return NextResponse.json(
+          {
+            status: "error",
+            code: "SUPABASE_IDENTITY_UNRESOLVED",
+            message: `Cannot persist to PostgreSQL: ${userRes.error}`,
+          },
+          { status: 503 }
+        );
+      }
+
+      const userUuid = userRes.userId;
 
       try {
         if (Array.isArray(progress) && progress.length > 0) {

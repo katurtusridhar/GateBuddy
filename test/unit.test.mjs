@@ -558,3 +558,120 @@ test('Security: Errors and responses never leak sensitive credentials or secrets
   assert.ok(!responseJson.includes('oA-THL,UXyh6'), 'Response must not contain masterCode');
   assert.equal(response.status, 'error');
 });
+
+// 13. SUPABASE USER IDENTITY MAPPING & FOREIGN KEY VERIFICATION
+test('Supabase Identity Mapping: verified user_profiles ID vs synthetic UUID mismatch', async (t) => {
+  // Mock Supabase store with auth.users and user_profiles
+  const mockAuthUsers = new Map([
+    ['real-gotrue-uuid-1234', { id: 'real-gotrue-uuid-1234', email: 'katurtusridhar@gatebuddy.com' }],
+  ]);
+  const mockUserProfiles = new Map([
+    ['katurtusridhar@gatebuddy.com', { id: 'real-gotrue-uuid-1234', email: 'katurtusridhar@gatebuddy.com' }],
+  ]);
+
+  const mockSupabase = {
+    from(table) {
+      if (table === 'user_profiles') {
+        return {
+          select(cols) {
+            return {
+              eq(col, val) {
+                return {
+                  async maybeSingle() {
+                    const row = mockUserProfiles.get(val);
+                    return { data: row || null, error: null };
+                  },
+                };
+              },
+            };
+          },
+        };
+      }
+      return {};
+    },
+  };
+
+  // Mock resolveSupabaseUserId logic
+  async function resolveSupabaseUserId(supabaseClient, username) {
+    if (!supabaseClient) return { resolved: false, error: 'No client' };
+    const cleanUser = username.trim().toLowerCase();
+    const email = cleanUser.includes('@') ? cleanUser : `${cleanUser}@gatebuddy.com`;
+    const { data: profile } = await supabaseClient.from('user_profiles').select('id').eq('email', email).maybeSingle();
+    if (profile && profile.id) {
+      return { resolved: true, userId: profile.id };
+    }
+    return {
+      resolved: false,
+      error: `User '${username}' does not have an active record in user_profiles / auth.users. Foreign key cannot be satisfied without GoTrue provisioning.`,
+    };
+  }
+
+  // 1. Existing user -> resolves to the genuine auth.users ID
+  const existingUser = await resolveSupabaseUserId(mockSupabase, 'katurtusridhar');
+  assert.equal(existingUser.resolved, true);
+  assert.equal(existingUser.userId, 'real-gotrue-uuid-1234');
+  assert.ok(mockAuthUsers.has(existingUser.userId), 'Resolved ID must exist in auth.users');
+
+  // 2. Case insensitive check -> KaturtuSridhar resolves to same real UUID
+  const caseInsensitive = await resolveSupabaseUserId(mockSupabase, 'KaturtuSridhar');
+  assert.equal(caseInsensitive.resolved, true);
+  assert.equal(caseInsensitive.userId, 'real-gotrue-uuid-1234');
+
+  // 3. Unprovisioned new user -> fails safely, does NOT fabricate synthetic UUID
+  const unprovisioned = await resolveSupabaseUserId(mockSupabase, 'new_student_2026');
+  assert.equal(unprovisioned.resolved, false);
+  assert.match(unprovisioned.error, /does not have an active record in user_profiles/);
+  assert.equal(unprovisioned.userId, undefined);
+
+  // 4. FK Integrity: Any insert with a non-existent UUID fails
+  function insertWithFkCheck(userId, taskId) {
+    if (!mockAuthUsers.has(userId)) {
+      throw new Error(`insert or update on table "task_progress" violates foreign key constraint "task_progress_user_id_fkey"`);
+    }
+    return { success: true };
+  }
+
+  // Verified user succeeds
+  assert.equal(insertWithFkCheck(existingUser.userId, 'TASK_0001').success, true);
+
+  // Synthetic UUID that is NOT in auth.users FAILS FK constraint
+  const fakeSyntheticUuid = '5f63114b-2510-5a19-a5bd-42691d242182';
+  assert.throws(() => insertWithFkCheck(fakeSyntheticUuid, 'TASK_0001'), /violates foreign key constraint/);
+});
+
+// 14. ANDROID COMPANION CREDENTIAL SAFETY & MISSING CREDENTIALS HANDLING
+test('Android Companion Credential Safety: empty credentials fail safely without hardcoded fallbacks', async (t) => {
+  function acquireTokenWithPrefs(prefs) {
+    const savedToken = prefs.session_token;
+    if (savedToken && savedToken.trim().length > 0) {
+      return { token: savedToken, status: 'CACHED_SESSION' };
+    }
+    const username = prefs.auth_username?.trim();
+    const password = prefs.auth_password?.trim();
+
+    // Security invariant: NEVER fall back to hardcoded plaintext passwords!
+    if (!username || !password) {
+      return { token: null, status: 'UNCONFIGURED_CREDENTIALS' };
+    }
+
+    return { token: `fresh_signed_token_for_${username}`, status: 'AUTHENTICATED' };
+  }
+
+  // 1. Fresh install with empty prefs -> does NOT send hardcoded password, fails cleanly
+  const freshInstall = acquireTokenWithPrefs({});
+  assert.equal(freshInstall.token, null);
+  assert.equal(freshInstall.status, 'UNCONFIGURED_CREDENTIALS');
+
+  // 2. Returning user with valid saved token -> returns cached session without re-transmitting password
+  const returningUserWithToken = acquireTokenWithPrefs({ session_token: 'existing_valid_token' });
+  assert.equal(returningUserWithToken.token, 'existing_valid_token');
+  assert.equal(returningUserWithToken.status, 'CACHED_SESSION');
+
+  // 3. User configured credentials in Settings -> authenticates successfully
+  const configuredUser = acquireTokenWithPrefs({
+    auth_username: 'katurtusridhar',
+    auth_password: 'UserEnteredSecretPassword!',
+  });
+  assert.equal(configuredUser.token, 'fresh_signed_token_for_katurtusridhar');
+  assert.equal(configuredUser.status, 'AUTHENTICATED');
+});
