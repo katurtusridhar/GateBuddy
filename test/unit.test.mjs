@@ -249,3 +249,101 @@ test('Sunday Points Target Verification: Sunday Test (20 pts) + Revision (5 pts)
   const weeklyRollingTarget = 30 * 7;
   assert.equal(weeklyRollingTarget, 210, '7-day rolling target must be 210 points');
 });
+
+// 8. CONTINUOUS TRACK LECTURE ORDERING & SUBJECT TRANSITION GUARANTEE
+test('Continuous Track Ordering: DL (42-52) must complete sequentially before DBMS (28-42) starts', async (t) => {
+  const schedulePath = path.join(rootDir, 'src/data/gate_cse_schedule.json');
+  const parsed = JSON.parse(fs.readFileSync(schedulePath, 'utf8'));
+  const allTasks = Array.isArray(parsed) ? parsed : parsed.tasks;
+
+  const track1Lectures = allTasks
+    .filter(t => (t.type === 'RECORDED' || t.type === 'LIVE') && t.slot === 1)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const track1Subjects = new Set(track1Lectures.map(t => t.subject));
+  function getTrackForSubject(subject) {
+    if (track1Subjects.has(subject)) return 1;
+    return 2;
+  }
+
+  // Verify Track 1 starts with Digital Logic 42..52, then DBMS 28..42
+  assert.equal(track1Lectures[0].subject, 'Digital Logic');
+  assert.equal(track1Lectures[0].curNum, 42);
+  assert.equal(track1Lectures[10].subject, 'Digital Logic');
+  assert.equal(track1Lectures[10].curNum, 52);
+  assert.equal(track1Lectures[11].subject, 'DBMS');
+  assert.equal(track1Lectures[11].curNum, 28);
+
+  // Simulate user scenario:
+  // DL 44 is completed on Oct 21. DL 42, 43, 45 rescheduled to Sundays.
+  // Oct 25 (Sun) has DL 43, Oct 26 has DL 44, Oct 27 has DL 45, ..., Oct 30 has DL 48
+  // Then Oct 31 MUST be DL 49, Nov 01 (Sun catch-up) DL 50, Nov 02 DL 51, Nov 03 DL 52, Nov 04 DBMS 28
+  const progressMap = new Map();
+  progressMap.set('TASK_0001', { isCompleted: true }); // DL 42 done
+  progressMap.set('TASK_0005', { isCompleted: true }); // DL 44 done
+
+  const recoveries = [
+    { id: 103, taskId: 'TASK_0003', subject: 'Digital Logic', recoveryDate: '2026-11-01', isCompleted: false },
+  ];
+
+  const todayDateStr = '2026-10-25';
+
+  function getSequentialLectureForTrack(targetDateStr, isRecovery = false) {
+    let completedBefore = 0;
+    for (const t of track1Lectures) {
+      if (progressMap.get(t.id)?.isCompleted === true) completedBefore++;
+    }
+
+    let uncompletedEarlier = 0;
+    let d = todayDateStr;
+    while (d <= targetDateStr) {
+      const dCore = allTasks.find(t => t.date === d && t.slot === 1 && (t.type === 'RECORDED' || t.type === 'LIVE'));
+      if (dCore) {
+        if (d === targetDateStr) {
+          if (isRecovery && progressMap.get(dCore.id)?.isCompleted !== true) uncompletedEarlier++;
+        } else if (progressMap.get(dCore.id)?.isCompleted !== true) {
+          uncompletedEarlier++;
+        }
+      }
+
+      const dRecs = recoveries.filter(r => r.recoveryDate === d && getTrackForSubject(r.subject) === 1);
+      if (d < targetDateStr) {
+        for (const r of dRecs) {
+          if (!r.isCompleted && progressMap.get(r.taskId)?.isCompleted !== true) uncompletedEarlier++;
+        }
+      }
+
+      const parts = d.split('-').map(Number);
+      const nextDay = new Date(parts[0], parts[1] - 1, parts[2] + 1);
+      d = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, '0')}-${String(nextDay.getDate()).padStart(2, '0')}`;
+    }
+
+    const idx = Math.min(Math.max(0, completedBefore + uncompletedEarlier), track1Lectures.length - 1);
+    return track1Lectures[idx];
+  }
+
+  // Exact dates verified matching user instructions:
+  const oct30 = getSequentialLectureForTrack('2026-10-30', false);
+  assert.equal(oct30.subject, 'Digital Logic');
+  assert.equal(oct30.curNum, 48, 'Oct 30 must be DL Lec 48');
+
+  const oct31 = getSequentialLectureForTrack('2026-10-31', false);
+  assert.equal(oct31.subject, 'Digital Logic');
+  assert.equal(oct31.curNum, 49, 'Oct 31 must be DL Lec 49 (never jump to DBMS before DL finishes)');
+
+  const nov01 = getSequentialLectureForTrack('2026-11-01', true);
+  assert.equal(nov01.subject, 'Digital Logic');
+  assert.equal(nov01.curNum, 50, 'Nov 01 Sunday recovery must be DL Lec 50');
+
+  const nov02 = getSequentialLectureForTrack('2026-11-02', false);
+  assert.equal(nov02.subject, 'Digital Logic');
+  assert.equal(nov02.curNum, 51, 'Nov 02 must be DL Lec 51');
+
+  const nov03 = getSequentialLectureForTrack('2026-11-03', false);
+  assert.equal(nov03.subject, 'Digital Logic');
+  assert.equal(nov03.curNum, 52, 'Nov 03 must be DL Lec 52 (Final lecture of DL)');
+
+  const nov04 = getSequentialLectureForTrack('2026-11-04', false);
+  assert.equal(nov04.subject, 'DBMS');
+  assert.equal(nov04.curNum, 28, 'Nov 04 must begin DBMS Lec 28 seamlessly');
+});

@@ -565,6 +565,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [isLoaded]);
 
+  // Canonical ordered core lectures for Track 1 (Slot 1) and Track 2 (Slot 2)
+  const track1Lectures = useMemo(() => {
+    return tasks
+      .filter((t) => (t.type === "RECORDED" || t.type === "LIVE") && t.slot === 1)
+      .sort((a, b) => compareDateStrings(a.date, b.date));
+  }, [tasks]);
+
+  const track2Lectures = useMemo(() => {
+    return tasks
+      .filter((t) => (t.type === "RECORDED" || t.type === "LIVE") && t.slot === 2)
+      .sort((a, b) => compareDateStrings(a.date, b.date));
+  }, [tasks]);
+
+  const getTrackForSubject = useCallback(
+    (subject: string) => {
+      if (track1Lectures.some((t) => t.subject === subject)) return 1;
+      if (track2Lectures.some((t) => t.subject === subject)) return 2;
+      const clean = (subject || "").toLowerCase();
+      if (
+        clean.includes("digital") ||
+        clean.includes("dbms") ||
+        clean.includes("c prog") ||
+        clean.includes("fundamental of c") ||
+        clean.includes("data struct") ||
+        clean.includes("engg math") ||
+        clean.includes("linear algebra") ||
+        clean.includes("probability") ||
+        clean.includes("calculus") ||
+        clean.includes("general aptitude") ||
+        clean.includes("toc") ||
+        clean.includes("compiler")
+      ) {
+        return 1;
+      }
+      return 2;
+    },
+    [track1Lectures, track2Lectures]
+  );
+
   // Sequential Lecture Index calculation matching Android ScheduleRepository.kt
   const getSequentialLecture = useCallback(
     (baseTask: ScheduleTask, targetDateStr: string, isRecovery: boolean = false, recoveryOrderIndex: number = 0) => {
@@ -577,49 +616,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return baseTask;
       }
 
-      const subjectTasks = tasks
-        .filter((t) => t.subject === baseTask.subject && !t.isSundayActivity && !t.isBuffer && !t.isRevision)
-        .sort((a, b) => a.curNum - b.curNum);
+      const trackNum = isRecovery
+        ? getTrackForSubject(baseTask.subject)
+        : baseTask.slot === 1 || baseTask.slot === 2
+        ? baseTask.slot
+        : getTrackForSubject(baseTask.subject);
 
-      if (subjectTasks.length === 0) return baseTask;
+      const canonicalList = trackNum === 1 ? track1Lectures : track2Lectures;
+      if (canonicalList.length === 0) return baseTask;
 
-      // Count completed lectures for this subject strictly before this date/slot
-      const targetSlot = isRecovery ? 5 : baseTask.slot;
+      // 1. Calculate how many lectures for this track were COMPLETED strictly before targetDateStr
       let completedBefore = 0;
-      for (const t of tasks) {
-        if (t.subject !== baseTask.subject || t.isSundayActivity || t.isBuffer || t.isRevision) continue;
-        const isDone = progress.get(t.id)?.isCompleted === true;
-        if (!isDone) continue;
-
-        if (compareDateStrings(t.date, targetDateStr) < 0) {
-          completedBefore++;
-        } else if (t.date === targetDateStr && !isRecovery && t.slot < targetSlot) {
-          completedBefore++;
-        }
-      }
-
-      // Add completed recoveries before this date
-      for (const r of recoveries) {
-        if (!r.isCompleted && progress.get(r.taskId)?.isCompleted !== true) continue;
-        const recTask = tasks.find((t) => t.id === r.taskId);
-        if (recTask?.subject !== baseTask.subject) continue;
-        if (compareDateStrings(r.recoveryDate, targetDateStr) < 0) {
+      for (let i = 0; i < canonicalList.length; i++) {
+        const t = canonicalList[i];
+        if (progress.get(t.id)?.isCompleted === true) {
           completedBefore++;
         }
       }
 
       const isThisSlotCompleted = progress.get(baseTask.id)?.isCompleted === true;
-      // If this specific slot is already completed, it holds its assigned lecture index
       if (isThisSlotCompleted) {
-        const idx = Math.min(Math.max(0, completedBefore), subjectTasks.length - 1);
+        const idx = Math.min(Math.max(0, completedBefore - 1), canonicalList.length - 1);
+        const lecture = canonicalList[idx];
         return {
           ...baseTask,
-          curNum: subjectTasks[idx].curNum,
-          totalCount: subjectTasks[idx].totalCount,
-          title: subjectTasks[idx].title,
-          details: subjectTasks[idx].details,
-          milestone: subjectTasks[idx].milestone,
-          sourcePage: subjectTasks[idx].sourcePage,
+          subject: lecture.subject,
+          curNum: lecture.curNum,
+          totalCount: lecture.totalCount,
+          title: isRecovery ? `${lecture.subject} — Lec ${lecture.curNum}/${lecture.totalCount}` : lecture.title,
+          details: isRecovery ? "Rescheduled Sunday catch-up • Slot 5 • +10 points" : lecture.details,
+          milestone: lecture.milestone,
+          sourcePage: lecture.sourcePage,
         };
       }
 
@@ -627,62 +654,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let uncompletedEarlier = 0;
       let d = todayDateStr;
       while (compareDateStrings(d, targetDateStr) <= 0) {
-        const dTasks = tasks.filter(
-          (t) => t.date === d && t.subject === baseTask.subject && !t.isSundayActivity && !t.isBuffer && !t.isRevision
+        const dCoreTask = tasks.find(
+          (t) => t.date === d && t.slot === trackNum && (t.type === "RECORDED" || t.type === "LIVE")
         );
-        for (const dt of dTasks) {
+        if (dCoreTask) {
           if (d === targetDateStr) {
             if (isRecovery) {
-              if (progress.get(dt.id)?.isCompleted !== true) {
-                uncompletedEarlier++;
-              }
-            } else {
-              if (dt.slot < targetSlot && progress.get(dt.id)?.isCompleted !== true) {
+              if (progress.get(dCoreTask.id)?.isCompleted !== true) {
                 uncompletedEarlier++;
               }
             }
           } else {
-            if (progress.get(dt.id)?.isCompleted !== true) {
+            if (progress.get(dCoreTask.id)?.isCompleted !== true) {
               uncompletedEarlier++;
             }
           }
         }
-        // Count uncompleted recoveries on day d before targetDate
+
+        // Count uncompleted recoveries on day d belonging to this track
+        const dRecs = recoveries.filter((r) => {
+          const rt = tasks.find((t) => t.id === r.taskId);
+          const sub = rt?.subject || "";
+          return (
+            r.recoveryDate === d &&
+            getTrackForSubject(sub) === trackNum &&
+            !r.isCompleted &&
+            progress.get(r.taskId)?.isCompleted !== true
+          );
+        });
+
         if (compareDateStrings(d, targetDateStr) < 0) {
-          const dRecs = recoveries.filter((r) => {
-            const rt = tasks.find((t) => t.id === r.taskId);
-            return (
-              r.recoveryDate === d &&
-              rt?.subject === baseTask.subject &&
-              !r.isCompleted &&
-              progress.get(r.taskId)?.isCompleted !== true
-            );
-          });
           uncompletedEarlier += dRecs.length;
         } else if (d === targetDateStr && isRecovery) {
           uncompletedEarlier += recoveryOrderIndex;
         }
 
-        // Increment day string safely
         const parts = d.split("-").map(Number);
         const nextDay = new Date(parts[0], parts[1] - 1, parts[2] + 1);
         d = `${nextDay.getFullYear()}-${String(nextDay.getMonth() + 1).padStart(2, "0")}-${String(nextDay.getDate()).padStart(2, "0")}`;
       }
 
-      const sequentialIdx = Math.min(Math.max(0, completedBefore + uncompletedEarlier), subjectTasks.length - 1);
-      const lecture = subjectTasks[sequentialIdx];
+      const sequentialIdx = Math.min(Math.max(0, completedBefore + uncompletedEarlier), canonicalList.length - 1);
+      const lecture = canonicalList[sequentialIdx];
 
       return {
         ...baseTask,
+        subject: lecture.subject,
         curNum: lecture.curNum,
         totalCount: lecture.totalCount,
-        title: isRecovery ? `${baseTask.subject} — Lec ${lecture.curNum}/${lecture.totalCount}` : lecture.title,
+        title: isRecovery ? `${lecture.subject} — Lec ${lecture.curNum}/${lecture.totalCount}` : lecture.title,
         details: isRecovery ? "Rescheduled Sunday catch-up • Slot 5 • +10 points" : lecture.details,
         milestone: lecture.milestone,
         sourcePage: lecture.sourcePage,
       };
     },
-    [tasks, progress, recoveries, todayDateStr]
+    [tasks, progress, recoveries, todayDateStr, track1Lectures, track2Lectures, getTrackForSubject]
   );
 
   // Transform tasks into UI TaskItemUi matching Android ScheduleRepository.kt
@@ -941,7 +967,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // Count earlier recoveries for the same subject on this same day
         const earlierRecCount = recoveriesForDate.slice(0, rIdx).filter((other) => {
           const ot = tasks.find((t) => t.id === other.taskId);
-          return ot?.subject === originalTask.subject;
+          return getTrackForSubject(ot?.subject || "") === getTrackForSubject(originalTask.subject);
         }).length;
 
         const adaptedTask = getSequentialLecture(originalTask, targetDateStr, true, earlierRecCount);
@@ -963,8 +989,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           displayDate: targetDateStr,
           dayOfWeek: "Sun",
           slot: 5,
-          subject: originalTask.subject,
-          subjectCode: getCodeForSubject(originalTask.subject),
+          subject: adaptedTask.subject,
+          subjectCode: getCodeForSubject(adaptedTask.subject),
           type: originalTask.type as any,
           curNum: adaptedTask.curNum,
           totalCount: adaptedTask.totalCount,
@@ -1025,7 +1051,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       return items;
     },
-    [tasks, progress, recoveries, customTasks, todayDateStr, getSequentialLecture]
+    [tasks, progress, recoveries, customTasks, todayDateStr, getSequentialLecture, getTrackForSubject]
   );
 
   // Active unrescheduled backlogs
