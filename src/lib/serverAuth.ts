@@ -51,12 +51,16 @@ async function createHmac(message: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+let tokenSequence = 0;
+
 /**
- * Signs a session token containing the username and expiry timestamp.
+ * Signs a session token containing username, expiry timestamp, and unique token nonce.
  */
 export async function signSessionToken(username: string, maxAgeSeconds: number = 60 * 60 * 24 * 30): Promise<string> {
+  tokenSequence = (tokenSequence + 1) % 1000000;
+  const nonce = `${Date.now().toString(36)}_${tokenSequence}`;
   const expiry = Date.now() + maxAgeSeconds * 1000;
-  const payload = `${username}:${expiry}`;
+  const payload = `${username}:${expiry}:${nonce}`;
   const hmac = await createHmac(payload);
   const full = `${payload}:${hmac}`;
   // base64url encode
@@ -66,11 +70,74 @@ export async function signSessionToken(username: string, maxAgeSeconds: number =
   return Buffer.from(full).toString("base64url");
 }
 
+// In-memory revoked token registry (keyed by token signature with expiry)
+const revokedTokenSignatures = new Map<string, number>();
+
+/**
+ * Revokes an issued session token immediately on the server before its expiration date.
+ */
+export function revokeSessionToken(token: string | null | undefined): boolean {
+  if (!token || typeof token !== "string") return false;
+  try {
+    let decoded = "";
+    if (typeof atob !== "undefined") {
+      const b64 = token.replace(/-/g, "+").replace(/_/g, "/");
+      decoded = atob(b64);
+    } else {
+      decoded = Buffer.from(token, "base64url").toString("utf-8");
+    }
+    const parts = decoded.split(":");
+    if (parts.length < 3) return false;
+    const expiryStr = parts[1];
+    const signature = parts[parts.length - 1];
+    const expiry = parseInt(expiryStr, 10);
+    if (!signature) return false;
+
+    // Prune expired entries to prevent unbounded memory growth
+    const now = Date.now();
+    for (const [sig, exp] of revokedTokenSignatures.entries()) {
+      if (now > exp) revokedTokenSignatures.delete(sig);
+    }
+
+    revokedTokenSignatures.set(signature, isNaN(expiry) ? now + 86400000 : expiry);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks whether a token's cryptographic signature has been revoked.
+ */
+export function isTokenRevoked(signature: string): boolean {
+  if (!signature) return false;
+  const expiry = revokedTokenSignatures.get(signature);
+  if (!expiry) return false;
+  if (Date.now() > expiry) {
+    revokedTokenSignatures.delete(signature);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Clears the revoked token registry (useful in testing).
+ */
+export function clearRevokedTokens(): void {
+  revokedTokenSignatures.clear();
+}
+
 /**
  * Verifies the integrity, signature, and expiration of a session token.
+ * Validates HMAC-SHA256 signature, expiry timestamp, and server-side revocation registry.
  */
-export async function verifySessionToken(token: string | undefined | null): Promise<{ valid: boolean; username?: string }> {
-  if (!token) return { valid: false };
+export async function verifySessionToken(token: string | undefined | null): Promise<{ valid: boolean; username?: string; error?: string }> {
+  if (!token || typeof token !== "string" || !token.trim()) return { valid: false, error: "MISSING_TOKEN" };
+
+  // Reject legacy "authenticated" bypass token
+  if (token.trim() === "authenticated") {
+    return { valid: false, error: "LEGACY_BYPASS_REJECTED" };
+  }
 
   try {
     let decoded = "";
@@ -82,22 +149,45 @@ export async function verifySessionToken(token: string | undefined | null): Prom
     }
 
     const parts = decoded.split(":");
-    if (parts.length !== 3) return { valid: false };
+    let username = "";
+    let expiryStr = "";
+    let signature = "";
+    let payloadToVerify = "";
 
-    const [username, expiryStr, signature] = parts;
-    const expiry = parseInt(expiryStr, 10);
-    if (isNaN(expiry) || Date.now() > expiry) {
-      return { valid: false };
+    if (parts.length === 4) {
+      const [u, exp, nonce, sig] = parts;
+      username = u;
+      expiryStr = exp;
+      signature = sig;
+      payloadToVerify = `${username}:${expiryStr}:${nonce}`;
+    } else if (parts.length === 3) {
+      const [u, exp, sig] = parts;
+      username = u;
+      expiryStr = exp;
+      signature = sig;
+      payloadToVerify = `${username}:${expiryStr}`;
+    } else {
+      return { valid: false, error: "MALFORMED_TOKEN" };
     }
 
-    const expectedHmac = await createHmac(`${username}:${expiryStr}`);
+    const expiry = parseInt(expiryStr, 10);
+    if (isNaN(expiry) || Date.now() > expiry) {
+      return { valid: false, error: "TOKEN_EXPIRED" };
+    }
+
+    // Check server-side revocation registry
+    if (isTokenRevoked(signature)) {
+      return { valid: false, error: "TOKEN_REVOKED" };
+    }
+
+    const expectedHmac = await createHmac(payloadToVerify);
     if (signature !== expectedHmac) {
-      return { valid: false };
+      return { valid: false, error: "INVALID_SIGNATURE" };
     }
 
     return { valid: true, username };
   } catch {
-    return { valid: false };
+    return { valid: false, error: "DECODE_ERROR" };
   }
 }
 

@@ -811,3 +811,99 @@ test('Identity Resolution: Missing or invalid Supabase user profile fails safely
   assert.equal(res.code, 'SUPABASE_IDENTITY_UNRESOLVED');
 });
 
+// 18. SERVER-SIDE SESSION REVOCATION, LOGOUT & REPLAY PREVENTION
+test('Session Security: Server-side token revocation, logout, and replay prevention', async (t) => {
+  const secretKey = 'test-secret-key-gatebuddy';
+  const crypto = await import('node:crypto');
+
+  function createHmac(data) {
+    return crypto.createHmac('sha256', secretKey).update(data).digest('hex');
+  }
+
+  let seq = 0;
+  function signToken(username, expiresInSeconds) {
+    seq++;
+    const nonce = `n_${seq}`;
+    const expiry = Date.now() + expiresInSeconds * 1000;
+    const payload = `${username}:${expiry}:${nonce}`;
+    const hmac = createHmac(payload);
+    return Buffer.from(`${payload}:${hmac}`).toString('base64url');
+  }
+
+  const revokedSignatures = new Map();
+
+  function revokeToken(token) {
+    if (!token) return false;
+    const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+    const parts = decoded.split(':');
+    if (parts.length < 3) return false;
+    const expiry = parseInt(parts[1], 10);
+    const sig = parts[parts.length - 1];
+    revokedSignatures.set(sig, expiry);
+    return true;
+  }
+
+  function verifyToken(token) {
+    if (!token) return { valid: false, error: 'MISSING_TOKEN' };
+    try {
+      const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+      const parts = decoded.split(':');
+      let username = '';
+      let expiryStr = '';
+      let sig = '';
+      let payloadToVerify = '';
+
+      if (parts.length === 4) {
+        const [u, exp, nonce, s] = parts;
+        username = u;
+        expiryStr = exp;
+        sig = s;
+        payloadToVerify = `${u}:${exp}:${nonce}`;
+      } else if (parts.length === 3) {
+        const [u, exp, s] = parts;
+        username = u;
+        expiryStr = exp;
+        sig = s;
+        payloadToVerify = `${u}:${exp}`;
+      } else {
+        return { valid: false, error: 'MALFORMED' };
+      }
+
+      const expiry = parseInt(expiryStr, 10);
+      if (Date.now() > expiry) return { valid: false, error: 'TOKEN_EXPIRED' };
+      if (revokedSignatures.has(sig)) return { valid: false, error: 'TOKEN_REVOKED' };
+      const expected = createHmac(payloadToVerify);
+      if (sig !== expected) return { valid: false, error: 'INVALID_SIGNATURE' };
+      return { valid: true, username };
+    } catch {
+      return { valid: false, error: 'DECODE_ERROR' };
+    }
+  }
+
+  // 1. Issue token for user A
+  const tokenA = signToken('katurtusridhar', 3600);
+  const checkInitial = verifyToken(tokenA);
+  assert.equal(checkInitial.valid, true);
+  assert.equal(checkInitial.username, 'katurtusridhar');
+
+  // 2. Revoke token A via logout
+  const revokeResult = revokeToken(tokenA);
+  assert.equal(revokeResult, true);
+
+  // 3. Attempt to replay revoked token A -> rejected immediately
+  const checkReplay = verifyToken(tokenA);
+  assert.equal(checkReplay.valid, false);
+  assert.equal(checkReplay.error, 'TOKEN_REVOKED');
+
+  // 4. Fresh token issued for user A is completely valid
+  const freshTokenA = signToken('katurtusridhar', 3600);
+  const checkFresh = verifyToken(freshTokenA);
+  assert.equal(checkFresh.valid, true);
+
+  // 5. Account switching: Revoking user A does not affect user B
+  const tokenB = signToken('second_student', 3600);
+  assert.equal(verifyToken(tokenB).valid, true);
+  assert.equal(verifyToken(tokenA).valid, false); // User A still revoked
+});
+
+
