@@ -1,24 +1,29 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-10-25T12:15:36.000Z",
+  "generatedAt": "2026-10-25T12:37:00.000Z",
   "channel": "debug",
   "packageName": "com.gatecse.companion.debug",
   "recommendedUpdate": {
-    "versionCode": 4,
-    "versionName": "1.0.3",
-    "releaseDate": "2026-10-25T12:15:36.000Z",
+    "releaseId": "rel-1.0.4-b6",
+    "behaviorVersion": "1.0.4",
+    "installVersionCode": 6,
+    "installVersionName": "1.0.4",
+    "versionCode": 6,
+    "versionName": "1.0.4",
     "releaseType": "standard",
+    "releaseDate": "2026-10-25T12:37:00.000Z",
+    "verificationStatus": "verified",
     "changelog": {
-      "summary": "In-app OTA auto-update verification release candidate",
+      "summary": "Full User-Controlled Version Manager & safe forward release candidate",
       "highlights": [
-        "Verified in-app OTA download and package installation flow",
-        "Enhanced update status telemetry and checksum integrity verification",
-        "Seamless backward compatibility with Room schema v3"
+        "In-app Version Manager with bidirectional release switching",
+        "Granular confirmation dialog explaining behavior version vs package build",
+        "Deterministic Room database schema v3 compatibility verification"
       ]
     },
-    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.3.apk",
-    "apkSizeBytes": 20892324,
-    "sha256": "75F9509D3340B22E18E1637CE1D51952F26DD56229561C910CDBEF8DB3671AD7",
+    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.4.apk",
+    "apkSizeBytes": 20908712,
+    "sha256": "B880A0B7CC5A2D6A9BBF835143578F146A1CAB750F83BAC26641CCA07504A35D",
     "signingCertificate": {
       "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
       "subjectDn": "C=US, O=Android, CN=Android Debug"
@@ -36,10 +41,88 @@
   },
   "releases": [
     {
+      "releaseId": "rel-1.0.4-b6",
+      "behaviorVersion": "1.0.4",
+      "installVersionCode": 6,
+      "installVersionName": "1.0.4",
+      "versionCode": 6,
+      "versionName": "1.0.4",
+      "releaseType": "standard",
+      "releaseDate": "2026-10-25T12:37:00.000Z",
+      "verificationStatus": "verified",
+      "changelog": {
+        "summary": "Full User-Controlled Version Manager & safe forward release candidate",
+        "highlights": [
+          "In-app Version Manager with bidirectional release switching",
+          "Granular confirmation dialog explaining behavior version vs package build",
+          "Deterministic Room database schema v3 compatibility verification"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.4.apk",
+      "apkSizeBytes": 20908712,
+      "sha256": "B880A0B7CC5A2D6A9BBF835143578F146A1CAB750F83BAC26641CCA07504A35D",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
+    {
+      "releaseId": "rel-1.0.2-r1-b5",
+      "behaviorVersion": "1.0.2",
+      "installVersionCode": 5,
+      "installVersionName": "1.0.2-r1",
+      "versionCode": 5,
+      "versionName": "1.0.2-r1",
+      "releaseType": "rollback",
+      "restoresBehaviorVersion": "1.0.2",
+      "releaseDate": "2026-10-25T12:35:00.000Z",
+      "verificationStatus": "verified",
+      "changelog": {
+        "summary": "Safe rollback release restoring v1.0.2 functionality via forward Android installation",
+        "highlights": [
+          "Restores v1.0.2 behavior while preserving Version Manager and Room schema v3",
+          "Incremented package build (Build 5) ensures valid Android PackageInstaller flow",
+          "Zero data loss guaranteed across all 8 Room database tables"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.2-r1.apk",
+      "apkSizeBytes": 20908708,
+      "sha256": "B231B7938A18AAF6E308160792C2E5677CF2EE084CC5DA1DE97113699448D24D",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
+    {
+      "releaseId": "rel-1.0.3-b4",
+      "behaviorVersion": "1.0.3",
+      "installVersionCode": 4,
+      "installVersionName": "1.0.3",
       "versionCode": 4,
       "versionName": "1.0.3",
-      "releaseDate": "2026-10-25T12:15:36.000Z",
       "releaseType": "standard",
+      "releaseDate": "2026-10-25T12:15:36.000Z",
+      "verificationStatus": "verified",
       "changelog": {
         "summary": "In-app OTA auto-update verification release candidate",
         "highlights": [
@@ -67,10 +150,15 @@
       }
     },
     {
+      "releaseId": "rel-1.0.2-b3",
+      "behaviorVersion": "1.0.2",
+      "installVersionCode": 3,
+      "installVersionName": "1.0.2",
       "versionCode": 3,
       "versionName": "1.0.2",
-      "releaseDate": "2026-10-25T11:37:32.000Z",
       "releaseType": "standard",
+      "releaseDate": "2026-10-25T11:37:32.000Z",
+      "verificationStatus": "verified",
       "changelog": {
         "summary": "In-app updates and version management verification candidate",
         "highlights": [
@@ -98,10 +186,15 @@
       }
     },
     {
+      "releaseId": "rel-1.0.1-b2",
+      "behaviorVersion": "1.0.1",
+      "installVersionCode": 2,
+      "installVersionName": "1.0.1",
       "versionCode": 2,
       "versionName": "1.0.1",
-      "releaseDate": "2026-10-25T10:22:37.000Z",
       "releaseType": "standard",
+      "releaseDate": "2026-10-25T10:22:37.000Z",
+      "verificationStatus": "verified",
       "changelog": {
         "summary": "Continuous lecture stream ordering, DPP logging, and glance widgets",
         "highlights": [

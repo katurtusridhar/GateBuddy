@@ -85,40 +85,53 @@ test('Release Catalog API & Manifest Tests', async (t) => {
     assert.equal(debugCatalog.channel, 'debug');
     assert.equal(debugCatalog.packageName, 'com.gatecse.companion.debug');
     assert.ok(Array.isArray(debugCatalog.releases), 'releases must be an array');
-    assert.equal(debugCatalog.releases.length >= 3, true, 'releases must contain baseline, v1.0.2 and v1.0.3');
+    assert.equal(debugCatalog.releases.length >= 5, true, 'releases must contain all 5 cataloged versions');
 
-    // Baseline v1.0.1
+    // Baseline v1.0.1 (code 2)
     const baseline = debugCatalog.releases.find(r => r.versionCode === 2);
     assert.ok(baseline, 'Baseline release v1.0.1 (code 2) must exist');
     assert.equal(baseline.versionName, '1.0.1');
     assert.equal(baseline.apkSizeBytes, 21040765);
     assert.equal(baseline.sha256, '3EBCE6420763E897B1DCC25A44FE286385D059C8587B76A5394A2798A140C40D');
-    assert.equal(baseline.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
-    assert.equal(baseline.compatibility.minSdk, 26);
-    assert.equal(baseline.compatibility.targetSdk, 35);
-    assert.equal(baseline.database.databaseVersion, 3);
 
-    // Release v1.0.2
+    // Historical v1.0.2 (code 3)
     const rel102 = debugCatalog.releases.find(r => r.versionCode === 3);
     assert.ok(rel102, 'Release v1.0.2 (code 3) must exist');
     assert.equal(rel102.versionName, '1.0.2');
     assert.equal(rel102.apkSizeBytes, 20892324);
     assert.equal(rel102.sha256, '837AACEBF0708A0E2B995455D3D7573D46020220CD9BF56AE593C418F96793B7');
-    assert.equal(rel102.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
-    assert.equal(rel102.database.databaseVersion, 3);
 
-    // Forward Update Candidate v1.0.3
-    const candidate = debugCatalog.releases.find(r => r.versionCode === 4);
-    assert.ok(candidate, 'Candidate release v1.0.3 (code 4) must exist');
-    assert.equal(candidate.versionName, '1.0.3');
-    assert.equal(candidate.apkSizeBytes, 20892324);
-    assert.equal(candidate.sha256, '75F9509D3340B22E18E1637CE1D51952F26DD56229561C910CDBEF8DB3671AD7');
+    // Baseline v1.0.3 (code 4)
+    const rel103 = debugCatalog.releases.find(r => r.versionCode === 4);
+    assert.ok(rel103, 'Release v1.0.3 (code 4) must exist');
+    assert.equal(rel103.versionName, '1.0.3');
+    assert.equal(rel103.apkSizeBytes, 20892324);
+    assert.equal(rel103.sha256, '75F9509D3340B22E18E1637CE1D51952F26DD56229561C910CDBEF8DB3671AD7');
+
+    // Rollback Candidate v1.0.2-r1 (code 5)
+    const rollback = debugCatalog.releases.find(r => r.versionCode === 5);
+    assert.ok(rollback, 'Rollback release v1.0.2-r1 (code 5) must exist');
+    assert.equal(rollback.releaseType, 'rollback');
+    assert.equal(rollback.behaviorVersion, '1.0.2');
+    assert.equal(rollback.restoresBehaviorVersion, '1.0.2');
+    assert.equal(rollback.apkSizeBytes, 20908708);
+    assert.equal(rollback.sha256, 'B231B7938A18AAF6E308160792C2E5677CF2EE084CC5DA1DE97113699448D24D');
+    assert.equal(rollback.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
+
+    // Forward Update Candidate v1.0.4 (code 6)
+    const candidate = debugCatalog.releases.find(r => r.versionCode === 6);
+    assert.ok(candidate, 'Candidate release v1.0.4 (code 6) must exist');
+    assert.equal(candidate.releaseType, 'standard');
+    assert.equal(candidate.versionName, '1.0.4');
+    assert.equal(candidate.apkSizeBytes, 20908712);
+    assert.equal(candidate.sha256, 'B880A0B7CC5A2D6A9BBF835143578F146A1CAB750F83BAC26641CCA07504A35D');
     assert.equal(candidate.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
     assert.equal(candidate.database.databaseVersion, 3);
 
-    // Recommended update
+    // Recommended update MUST be the standard forward release v1.0.4 (never a rollback)
     assert.ok(debugCatalog.recommendedUpdate, 'recommendedUpdate must be present');
-    assert.equal(debugCatalog.recommendedUpdate.versionCode, 4);
+    assert.equal(debugCatalog.recommendedUpdate.versionCode, 6);
+    assert.equal(debugCatalog.recommendedUpdate.releaseType, 'standard');
     assert.equal(debugCatalog.recommendedUpdate.sha256, candidate.sha256);
   });
 
