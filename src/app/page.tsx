@@ -70,7 +70,7 @@ export default function LandingPage() {
       <section className="mx-auto max-w-5xl px-4 sm:px-6 py-12 sm:py-20 text-center">
         <div className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-950/40 px-3.5 py-1.5 text-xs font-bold text-sky-400 shadow-[0_0_15px_rgba(14,165,233,0.2)]">
           <Zap className="h-3.5 w-3.5 text-sky-400" />
-          <span>Realtime Bidirectional Sync with Android App</span>
+          <span>Realtime Cloud Synchronization with Android App</span>
         </div>
 
         <h1 className="mt-6 text-3xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-tight">

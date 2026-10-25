@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
   // If Supabase is configured, fetch persistent records from PostgreSQL
   if (isSupabaseConfigured) {
     try {
-      const [progRes, recRes, assessRes, customRes, achRes] = await Promise.all([
+      const [progRes, recRes, assessRes, customRes, achRes, dppRes] = await Promise.all([
         supabase.from("task_progress").select("*"),
         supabase.from("recovery_assignments").select("*"),
         supabase.from("assessment_results").select("*"),
@@ -67,6 +67,13 @@ export async function GET(req: NextRequest) {
         (async () => {
           try {
             return await supabase.from("user_achievements").select("*");
+          } catch {
+            return { data: null, error: null };
+          }
+        })(),
+        (async () => {
+          try {
+            return await supabase.from("dpp_records").select("*");
           } catch {
             return { data: null, error: null };
           }
@@ -137,6 +144,10 @@ export async function GET(req: NextRequest) {
           });
         }
         serverSyncState.achievements = Array.from(existingMap.values());
+      }
+
+      if (dppRes && !dppRes.error && dppRes.data && dppRes.data.length > 0) {
+        serverSyncState.dppRecords = dppRes.data;
       }
 
       if (maxDbTimestamp > 0) {
@@ -351,6 +362,30 @@ export async function POST(req: NextRequest) {
             } catch {
               // table may not exist yet in some environments
             }
+          }
+        }
+
+        if (Array.isArray(assessments) && assessments.length > 0) {
+          try {
+            await supabase.from("assessment_results").upsert(assessments);
+          } catch {
+            // table may not exist yet in some environments
+          }
+        }
+
+        if (Array.isArray(dppRecords) && dppRecords.length > 0) {
+          try {
+            await supabase.from("dpp_records").upsert(dppRecords);
+          } catch {
+            // table may not exist yet in some environments
+          }
+        }
+
+        if (Array.isArray(customTasks) && customTasks.length > 0) {
+          try {
+            await supabase.from("custom_tasks").upsert(customTasks);
+          } catch {
+            // table may not exist yet in some environments
           }
         }
       } catch (dbErr) {

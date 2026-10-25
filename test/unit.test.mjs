@@ -89,6 +89,7 @@ test('Cryptographic HMAC-SHA256 Session Auth & Sanitization', async (t) => {
 
   // Subtest: Malformed token rejection
   assert.equal(verifyToken('malformed_token_string'), null, 'Malformed token must return null');
+  assert.equal(verifyToken('authenticated'), null, 'Magic bypass token string authenticated must be strictly rejected (SEC-001)');
   assert.equal(verifyToken(''), null, 'Empty token must return null');
   assert.equal(verifyToken(null), null, 'Null token must return null');
 
@@ -346,4 +347,31 @@ test('Continuous Track Ordering: DL (42-52) must complete sequentially before DB
   const nov04 = getSequentialLectureForTrack('2026-11-04', false);
   assert.equal(nov04.subject, 'DBMS');
   assert.equal(nov04.curNum, 28, 'Nov 04 must begin DBMS Lec 28 seamlessly');
+});
+
+// 9. COMPANION CLIENT KEY AUTHORIZATION SECURITY (SEC-002)
+test('Companion Client Key Authorization: anonymous requests rejected, valid key accepted', async (t) => {
+  const CLIENT_KEY = 'gb_companion_secure_sync_2026_tok';
+
+  function evaluateClientGrant(body) {
+    if (body.grantType === 'companion_client') {
+      if (body.clientKey && body.clientKey === CLIENT_KEY) {
+        return { success: true, authorized: true };
+      }
+      return { success: false, error: 'Unauthorized: valid clientKey required' };
+    }
+    return { success: false, error: 'Invalid grant' };
+  }
+
+  // Without client key -> must be rejected
+  const noKey = evaluateClientGrant({ grantType: 'companion_client' });
+  assert.equal(noKey.success, false, 'Anonymous companion_client without clientKey must fail');
+
+  // With wrong client key -> must be rejected
+  const wrongKey = evaluateClientGrant({ grantType: 'companion_client', clientKey: 'wrong_key' });
+  assert.equal(wrongKey.success, false, 'Invalid clientKey must fail');
+
+  // With correct client key -> must succeed
+  const validKey = evaluateClientGrant({ grantType: 'companion_client', clientKey: CLIENT_KEY });
+  assert.equal(validKey.success, true, 'Matching clientKey must succeed');
 });

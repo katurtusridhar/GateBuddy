@@ -72,11 +72,6 @@ export async function signSessionToken(username: string, maxAgeSeconds: number =
 export async function verifySessionToken(token: string | undefined | null): Promise<{ valid: boolean; username?: string }> {
   if (!token) return { valid: false };
 
-  // Backward compatibility fallback for transitions
-  if (token === "authenticated") {
-    return { valid: true, username: serverCredentials.username };
-  }
-
   try {
     let decoded = "";
     if (typeof atob !== "undefined") {

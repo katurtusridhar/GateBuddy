@@ -5,6 +5,8 @@ import {
   checkUserLogin,
   verifyMasterCode,
   serverCredentials,
+  CLIENT_API_KEY,
+  timingSafeEqual,
 } from "@/lib/serverAuth";
 
 export async function POST(req: NextRequest) {
@@ -14,6 +16,7 @@ export async function POST(req: NextRequest) {
     const password = (body.password || "").trim();
     const masterCode = (body.masterCode || "").trim();
     const grantType = (body.grantType || "").trim();
+    const clientKey = (body.clientKey || "").trim();
 
     let authenticatedUsername: string | null = null;
 
@@ -30,9 +33,11 @@ export async function POST(req: NextRequest) {
       authenticatedUsername = username || serverCredentials.username;
     }
 
-    // 3. Authenticate via companion client grant
+    // 3. Authenticate via companion client grant (requires verified client key)
     if (!authenticatedUsername && grantType === "companion_client") {
-      authenticatedUsername = username || serverCredentials.username;
+      if (clientKey && timingSafeEqual(clientKey, CLIENT_API_KEY)) {
+        authenticatedUsername = username || serverCredentials.username;
+      }
     }
 
     // 4. Authenticate via existing valid session token (token refresh)
