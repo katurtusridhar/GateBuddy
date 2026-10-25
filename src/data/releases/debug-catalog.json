@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-10-25T12:37:00.000Z",
+  "generatedAt": "2026-10-25T12:51:00.000Z",
   "channel": "debug",
   "packageName": "com.gatecse.companion.debug",
   "recommendedUpdate": {
@@ -17,6 +17,7 @@
       "summary": "Full User-Controlled Version Manager & safe forward release candidate",
       "highlights": [
         "In-app Version Manager with bidirectional release switching",
+        "Interactive Restore and Forward action buttons on every release card",
         "Granular confirmation dialog explaining behavior version vs package build",
         "Deterministic Room database schema v3 compatibility verification"
       ]
@@ -41,26 +42,26 @@
   },
   "releases": [
     {
-      "releaseId": "rel-1.0.4-b6",
-      "behaviorVersion": "1.0.4",
-      "installVersionCode": 6,
-      "installVersionName": "1.0.4",
-      "versionCode": 6,
-      "versionName": "1.0.4",
+      "releaseId": "rel-1.0.5-b8",
+      "behaviorVersion": "1.0.5",
+      "installVersionCode": 8,
+      "installVersionName": "1.0.5",
+      "versionCode": 8,
+      "versionName": "1.0.5",
       "releaseType": "standard",
-      "releaseDate": "2026-10-25T12:37:00.000Z",
+      "releaseDate": "2026-10-25T12:51:00.000Z",
       "verificationStatus": "verified",
       "changelog": {
-        "summary": "Full User-Controlled Version Manager & safe forward release candidate",
+        "summary": "Subsequent forward release for Version Manager progression",
         "highlights": [
-          "In-app Version Manager with bidirectional release switching",
-          "Granular confirmation dialog explaining behavior version vs package build",
-          "Deterministic Room database schema v3 compatibility verification"
+          "Verifies forward version switching from Version Manager",
+          "Demonstrates moving forward again after rollback",
+          "Maintains 100% data preservation across all 8 Room tables"
         ]
       },
-      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.4.apk",
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.5.apk",
       "apkSizeBytes": 20908712,
-      "sha256": "B880A0B7CC5A2D6A9BBF835143578F146A1CAB750F83BAC26641CCA07504A35D",
+      "sha256": "D1A457675E7DFADAD6F49AFA68E2847A8D36449F46807017D3B94786734DA29C",
       "signingCertificate": {
         "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
         "subjectDn": "C=US, O=Android, CN=Android Debug"
@@ -77,27 +78,64 @@
       }
     },
     {
-      "releaseId": "rel-1.0.2-r1-b5",
+      "releaseId": "rel-1.0.2-r2-b7",
       "behaviorVersion": "1.0.2",
-      "installVersionCode": 5,
-      "installVersionName": "1.0.2-r1",
-      "versionCode": 5,
-      "versionName": "1.0.2-r1",
+      "installVersionCode": 7,
+      "installVersionName": "1.0.2-r2",
+      "versionCode": 7,
+      "versionName": "1.0.2-r2",
       "releaseType": "rollback",
       "restoresBehaviorVersion": "1.0.2",
-      "releaseDate": "2026-10-25T12:35:00.000Z",
+      "releaseDate": "2026-10-25T12:50:00.000Z",
       "verificationStatus": "verified",
       "changelog": {
         "summary": "Safe rollback release restoring v1.0.2 functionality via forward Android installation",
         "highlights": [
           "Restores v1.0.2 behavior while preserving Version Manager and Room schema v3",
-          "Incremented package build (Build 5) ensures valid Android PackageInstaller flow",
+          "Incremented package build (Build 7) ensures valid Android PackageInstaller flow over Build 6",
           "Zero data loss guaranteed across all 8 Room database tables"
         ]
       },
-      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.2-r1.apk",
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.2-r2.apk",
       "apkSizeBytes": 20908708,
-      "sha256": "B231B7938A18AAF6E308160792C2E5677CF2EE084CC5DA1DE97113699448D24D",
+      "sha256": "7C6B0A40F65BD53F4C3733B0C64BDAB6959512DB84C0F3D20927F5221E8EA2A9",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
+    {
+      "releaseId": "rel-1.0.4-b6",
+      "behaviorVersion": "1.0.4",
+      "installVersionCode": 6,
+      "installVersionName": "1.0.4",
+      "versionCode": 6,
+      "versionName": "1.0.4",
+      "releaseType": "standard",
+      "releaseDate": "2026-10-25T12:37:00.000Z",
+      "verificationStatus": "verified",
+      "changelog": {
+        "summary": "Full User-Controlled Version Manager & safe forward release candidate",
+        "highlights": [
+          "In-app Version Manager with bidirectional release switching",
+          "Interactive Restore and Forward action buttons on every release card",
+          "Granular confirmation dialog explaining behavior version vs package build",
+          "Deterministic Room database schema v3 compatibility verification"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.4.apk",
+      "apkSizeBytes": 20908712,
+      "sha256": "B880A0B7CC5A2D6A9BBF835143578F146A1CAB750F83BAC26641CCA07504A35D",
       "signingCertificate": {
         "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
         "subjectDn": "C=US, O=Android, CN=Android Debug"

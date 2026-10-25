@@ -108,15 +108,24 @@ test('Release Catalog API & Manifest Tests', async (t) => {
     assert.equal(rel103.apkSizeBytes, 20892324);
     assert.equal(rel103.sha256, '75F9509D3340B22E18E1637CE1D51952F26DD56229561C910CDBEF8DB3671AD7');
 
-    // Rollback Candidate v1.0.2-r1 (code 5)
-    const rollback = debugCatalog.releases.find(r => r.versionCode === 5);
-    assert.ok(rollback, 'Rollback release v1.0.2-r1 (code 5) must exist');
+    // Rollback Candidate v1.0.2-r2 (code 7)
+    const rollback = debugCatalog.releases.find(r => r.versionCode === 7);
+    assert.ok(rollback, 'Rollback release v1.0.2-r2 (code 7) must exist');
     assert.equal(rollback.releaseType, 'rollback');
     assert.equal(rollback.behaviorVersion, '1.0.2');
     assert.equal(rollback.restoresBehaviorVersion, '1.0.2');
     assert.equal(rollback.apkSizeBytes, 20908708);
-    assert.equal(rollback.sha256, 'B231B7938A18AAF6E308160792C2E5677CF2EE084CC5DA1DE97113699448D24D');
+    assert.equal(rollback.sha256, '7C6B0A40F65BD53F4C3733B0C64BDAB6959512DB84C0F3D20927F5221E8EA2A9');
     assert.equal(rollback.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
+
+    // Forward Update Progression Candidate v1.0.5 (code 8)
+    const forward8 = debugCatalog.releases.find(r => r.versionCode === 8);
+    assert.ok(forward8, 'Forward release v1.0.5 (code 8) must exist');
+    assert.equal(forward8.releaseType, 'standard');
+    assert.equal(forward8.versionName, '1.0.5');
+    assert.equal(forward8.apkSizeBytes, 20908712);
+    assert.equal(forward8.sha256, 'D1A457675E7DFADAD6F49AFA68E2847A8D36449F46807017D3B94786734DA29C');
+    assert.equal(forward8.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
 
     // Forward Update Candidate v1.0.4 (code 6)
     const candidate = debugCatalog.releases.find(r => r.versionCode === 6);
