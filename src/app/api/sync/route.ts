@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import {
-  verifyRequestAuthorization,
+  getAuthorizedUser,
+  getDeterministicUserUuid,
   sanitizeSyncState,
   updateServerCredentials,
+  verifyMasterCode,
   serverCredentials,
 } from "@/lib/serverAuth";
 
@@ -39,8 +41,8 @@ const serverSyncState = {
 
 export async function GET(req: NextRequest) {
   // Enforce user-scoped cryptographic authentication & API authorization
-  const isAuthorized = await verifyRequestAuthorization(req);
-  if (!isAuthorized) {
+  const auth = await getAuthorizedUser(req);
+  if (!auth.authorized || !auth.username) {
     return NextResponse.json(
       { status: "unauthorized", message: "User authorization required. Provide valid Bearer session token or auth cookie." },
       { status: 401 }
@@ -56,17 +58,18 @@ export async function GET(req: NextRequest) {
   let maxDbTimestamp = 0;
   const dbErrors: any[] = [];
 
-  // If Supabase is configured, fetch persistent records from PostgreSQL
+  // If Supabase is configured, fetch persistent records from PostgreSQL filtered by user ownership
   if (isSupabaseConfigured) {
     try {
+      const userUuid = await getDeterministicUserUuid(auth.username);
       const [progRes, recRes, assessRes, customRes, achRes, dppRes] = await Promise.all([
-        supabase.from("task_progress").select("*"),
-        supabase.from("recovery_assignments").select("*"),
-        supabase.from("assessment_results").select("*"),
-        supabase.from("custom_tasks").select("*"),
+        supabase.from("task_progress").select("*").eq("user_id", userUuid),
+        supabase.from("recovery_assignments").select("*").eq("user_id", userUuid),
+        supabase.from("assessment_results").select("*").eq("user_id", userUuid),
+        supabase.from("custom_tasks").select("*").eq("user_id", userUuid),
         (async () => {
           try {
-            return await supabase.from("user_achievements").select("*");
+            return await supabase.from("user_achievements").select("*").eq("user_id", userUuid);
           } catch {
             return { data: null, error: null };
           }
@@ -187,8 +190,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     // Enforce user-scoped cryptographic authentication & API authorization
-    const isAuthorized = await verifyRequestAuthorization(req);
-    if (!isAuthorized) {
+    const auth = await getAuthorizedUser(req);
+    if (!auth.authorized || !auth.username) {
       return NextResponse.json(
         { status: "unauthorized", message: "User authorization required. Provide valid Bearer session token or auth cookie." },
         { status: 401 }
@@ -197,6 +200,20 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { progress, recoveries, assessments, dppRecords, customTasks, settings, achievements, credentials } = body;
+
+    // Per-user ownership check: An authenticated user cannot mutate another user's records without masterCode
+    if (credentials?.username && credentials.username.trim().toLowerCase() !== auth.username.toLowerCase()) {
+      if (!credentials.masterCode || !verifyMasterCode(credentials.masterCode)) {
+        return NextResponse.json(
+          {
+            status: "forbidden",
+            code: "CROSS_USER_ACCESS_DENIED",
+            message: `User '${auth.username}' is not authorized to modify records for user '${credentials.username}'.`,
+          },
+          { status: 403 }
+        );
+      }
+    }
 
     // Unidirectional App -> Website Sync Model:
     // ONLY the Android Companion App (Bearer token authenticated) has authority to mutate task progress, recoveries, assessments, and DPP records.
@@ -319,9 +336,13 @@ export async function POST(req: NextRequest) {
 
     // If Supabase is configured, persist all modified entities to PostgreSQL
     if (isSupabaseConfigured) {
+      const dbErrors: any[] = [];
+      const userUuid = await getDeterministicUserUuid(auth.username);
+
       try {
         if (Array.isArray(progress) && progress.length > 0) {
           const rows = progress.map((p) => ({
+            user_id: userUuid,
             task_id: p.taskId,
             original_date: p.originalDate,
             is_completed: p.isCompleted === true,
@@ -330,12 +351,16 @@ export async function POST(req: NextRequest) {
             notes: p.notes || "",
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await supabase.from("task_progress").upsert(rows, { onConflict: "task_id" });
-          if (error) console.warn("Supabase task_progress upsert error:", error.message);
+          const { error } = await supabase.from("task_progress").upsert(rows, { onConflict: "user_id,task_id" });
+          if (error) {
+            console.warn("Supabase task_progress upsert error:", error.message);
+            dbErrors.push({ table: "task_progress", error: error.message });
+          }
         }
 
         if (Array.isArray(recoveries) && recoveries.length > 0) {
           const rows = recoveries.map((r) => ({
+            user_id: userUuid,
             task_id: r.taskId,
             original_date: r.originalDate,
             recovery_date: r.recoveryDate,
@@ -344,52 +369,97 @@ export async function POST(req: NextRequest) {
             status: r.status,
             updated_at: new Date(mutationTimestamp).toISOString(),
           }));
-          const { error } = await supabase.from("recovery_assignments").upsert(rows, { onConflict: "task_id" });
-          if (error) console.warn("Supabase recovery_assignments upsert error:", error.message);
+          const { error } = await supabase.from("recovery_assignments").upsert(rows, { onConflict: "user_id,task_id" });
+          if (error) {
+            console.warn("Supabase recovery_assignments upsert error:", error.message);
+            dbErrors.push({ table: "recovery_assignments", error: error.message });
+          }
         }
 
         if (Array.isArray(achievements) && achievements.length > 0) {
           const rows = achievements
             .filter((a: any) => a.isUnlocked === true)
             .map((a: any) => ({
+              user_id: userUuid,
               code: a.code || a.id,
               is_unlocked: true,
               unlocked_at: a.unlockedAtTimestamp ? new Date(a.unlockedAtTimestamp).toISOString() : new Date().toISOString(),
             }));
           if (rows.length > 0) {
-            try {
-              await supabase.from("user_achievements").upsert(rows, { onConflict: "code" });
-            } catch {
-              // table may not exist yet in some environments
+            const { error } = await supabase.from("user_achievements").upsert(rows, { onConflict: "user_id,code" });
+            if (error) {
+              console.warn("Supabase user_achievements upsert error:", error.message);
+              dbErrors.push({ table: "user_achievements", error: error.message });
             }
           }
         }
 
         if (Array.isArray(assessments) && assessments.length > 0) {
-          try {
-            await supabase.from("assessment_results").upsert(assessments);
-          } catch {
-            // table may not exist yet in some environments
+          const rows = assessments.map((a: any) => ({
+            user_id: userUuid,
+            test_date: a.testDate,
+            test_name: a.testName,
+            subject_name: a.subjectName,
+            marks_obtained: a.marksObtained,
+            max_marks: a.maxMarks,
+            percentage: a.percentage,
+            questions_attempted: a.questionsAttempted,
+            questions_correct: a.questionsCorrect,
+            topic: a.topic || "",
+            mistakes_analysis: a.mistakesAnalysis || "",
+            follow_up_tasks: a.followUpTasks || "",
+            updated_at: new Date(mutationTimestamp).toISOString(),
+          }));
+          const { error } = await supabase.from("assessment_results").upsert(rows);
+          if (error) {
+            console.warn("Supabase assessment_results upsert error:", error.message);
+            dbErrors.push({ table: "assessment_results", error: error.message });
           }
         }
 
         if (Array.isArray(dppRecords) && dppRecords.length > 0) {
-          try {
-            await supabase.from("dpp_records").upsert(dppRecords);
-          } catch {
-            // table may not exist yet in some environments
+          const { error } = await supabase.from("dpp_records").upsert(dppRecords);
+          if (error) {
+            console.warn("Supabase dpp_records upsert error:", error.message);
+            dbErrors.push({ table: "dpp_records", error: error.message });
           }
         }
 
         if (Array.isArray(customTasks) && customTasks.length > 0) {
-          try {
-            await supabase.from("custom_tasks").upsert(customTasks);
-          } catch {
-            // table may not exist yet in some environments
+          const rows = customTasks.map((c: any) => ({
+            user_id: userUuid,
+            date: c.date,
+            title: c.title,
+            subject_code: c.subjectCode || "GATE",
+            subject_name: c.subjectName || "General / Practice",
+            is_completed: c.isCompleted === true,
+            completed_at: c.completedAtTimestamp ? new Date(c.completedAtTimestamp).toISOString() : null,
+            notes: c.notes || "",
+            points_value: c.pointsValue || 5,
+            updated_at: new Date(mutationTimestamp).toISOString(),
+          }));
+          const { error } = await supabase.from("custom_tasks").upsert(rows);
+          if (error) {
+            console.warn("Supabase custom_tasks upsert error:", error.message);
+            dbErrors.push({ table: "custom_tasks", error: error.message });
           }
         }
-      } catch (dbErr) {
-        console.warn("Supabase background upsert error", dbErr);
+      } catch (dbErr: any) {
+        console.warn("Supabase background upsert exception", dbErr);
+        dbErrors.push({ table: "all", error: dbErr?.message || "Unknown database failure" });
+      }
+
+      // If durable persistence fails, DO NOT falsely return success
+      if (dbErrors.length > 0) {
+        return NextResponse.json(
+          {
+            status: "error",
+            code: "DATABASE_PERSISTENCE_FAILED",
+            message: "Failed to persist records to durable PostgreSQL storage. Operation not confirmed.",
+            errors: dbErrors,
+          },
+          { status: 503 }
+        );
       }
     }
 

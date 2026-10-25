@@ -102,20 +102,19 @@ export async function verifySessionToken(token: string | undefined | null): Prom
 }
 
 /**
- * Checks if an incoming HTTP request is authorized.
+ * Resolves the authenticated user identity from an incoming HTTP request.
  * Accepts:
  * 1. Cryptographically signed Bearer session token (Android or API clients)
  * 2. Cryptographically signed 'gatebuddy_auth' session cookie (Web browsers)
- * 3. Client API key during transition
  */
-export async function verifyRequestAuthorization(req: Request): Promise<boolean> {
-  // 1. Check Bearer token in Authorization header (cryptographically signed user session token)
+export async function getAuthorizedUser(req: Request): Promise<{ authorized: boolean; username?: string }> {
+  // 1. Check Bearer token in Authorization header
   const authHeader = req.headers.get("authorization");
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const bearerToken = authHeader.substring(7).trim();
     const tokenResult = await verifySessionToken(bearerToken);
-    if (tokenResult.valid) {
-      return true;
+    if (tokenResult.valid && tokenResult.username) {
+      return { authorized: true, username: tokenResult.username };
     }
   }
 
@@ -126,14 +125,35 @@ export async function verifyRequestAuthorization(req: Request): Promise<boolean>
 
   if (cookieVal) {
     const verification = await verifySessionToken(cookieVal);
-    if (verification.valid) {
-      return true;
+    if (verification.valid && verification.username) {
+      return { authorized: true, username: verification.username };
     }
   }
 
-  // Static client keys are NO LONGER trusted as proof of identity.
-  // All callers must present an authenticated user-scoped session token or cookie.
-  return false;
+  return { authorized: false };
+}
+
+/**
+ * Checks if an incoming HTTP request is authorized.
+ */
+export async function verifyRequestAuthorization(req: Request): Promise<boolean> {
+  const user = await getAuthorizedUser(req);
+  return user.authorized;
+}
+
+/**
+ * Generates a deterministic RFC 4122 compliant UUID from a username.
+ * Ensures consistent multi-tenant user_id mapping across serverless cold starts.
+ */
+export async function getDeterministicUserUuid(username: string): Promise<string> {
+  const enc = new TextEncoder();
+  const data = enc.encode("gatebuddy-user-namespace:" + username.trim().toLowerCase());
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hex = hashArray.slice(0, 16).map((b) => b.toString(16).padStart(2, "0"));
+  hex[6] = ((hashArray[6] & 0x0f) | 0x50).toString(16).padStart(2, "0");
+  hex[8] = ((hashArray[8] & 0x3f) | 0x80).toString(16).padStart(2, "0");
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
 }
 
 /**

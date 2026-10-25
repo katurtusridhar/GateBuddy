@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySessionToken, AUTH_COOKIE_NAME, serverCredentials } from "@/lib/serverAuth";
+import { getAuthorizedUser, serverCredentials } from "@/lib/serverAuth";
 
 export async function GET(req: NextRequest) {
-  const authCookie = req.cookies.get(AUTH_COOKIE_NAME);
-  const sessionCheck = await verifySessionToken(authCookie?.value);
+  const auth = await getAuthorizedUser(req);
 
-  if (!sessionCheck.valid || !sessionCheck.username) {
+  if (!auth.authorized || !auth.username) {
     return NextResponse.json(
       { success: false, authenticated: false, user: null },
       { status: 401 }
     );
   }
 
-  const username = sessionCheck.username;
+  const username = auth.username;
   return NextResponse.json({
     success: true,
     authenticated: true,

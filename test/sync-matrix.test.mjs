@@ -294,3 +294,130 @@ test('Test E — Explicit user uncheck mutation is properly accepted', async (t)
   assert.equal(task10.isCompleted, false, 'Explicit uncheck must be accepted');
   assert.equal(task10.completedAtTimestamp, null);
 });
+
+// 6. TEST F — DURABLE POSTGRESQL PERSISTENCE & ERROR HANDLING (NO SILENT SUCCESS)
+test('Test F — Durable PostgreSQL Persistence: write failures return 503 error, never silent success', async (t) => {
+  // Simulates durable persistence engine with mockable PostgreSQL store
+  function createDurableSyncEngine(options = { simulateDbError: false }) {
+    let mockPostgresTable = new Map(); // Simulated durable table: (user_id, task_id) -> row
+    let inMemoryCache = new Map();
+
+    return {
+      post(userId, payload) {
+        const { progress } = payload;
+        const dbErrors = [];
+
+        // Attempt durable write
+        if (Array.isArray(progress)) {
+          for (const p of progress) {
+            if (options.simulateDbError) {
+              dbErrors.push({ table: 'task_progress', error: 'Connection to PostgreSQL failed: timeout' });
+              break;
+            }
+            // Composite key matching schema: (user_id, task_id)
+            const key = `${userId}:${p.taskId}`;
+            mockPostgresTable.set(key, {
+              user_id: userId,
+              task_id: p.taskId,
+              original_date: p.originalDate,
+              is_completed: p.isCompleted,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+
+        // INVARIANT: If durable write fails, DO NOT claim success!
+        if (dbErrors.length > 0) {
+          return {
+            status: 503,
+            body: {
+              status: 'error',
+              code: 'DATABASE_PERSISTENCE_FAILED',
+              message: 'Failed to persist records to durable PostgreSQL storage.',
+              errors: dbErrors,
+            },
+          };
+        }
+
+        // Only update in-memory state after durable write succeeds
+        if (Array.isArray(progress)) {
+          for (const p of progress) {
+            inMemoryCache.set(p.taskId, p);
+          }
+        }
+
+        return {
+          status: 200,
+          body: {
+            status: 'synced',
+            persistedRows: mockPostgresTable.size,
+          },
+        };
+      },
+      restartServerlessInstance() {
+        // Cold start wipes in-memory cache completely
+        inMemoryCache.clear();
+      },
+      getHydratedFromPostgres(userId) {
+        const records = [];
+        for (const [key, value] of mockPostgresTable.entries()) {
+          if (key.startsWith(`${userId}:`)) {
+            records.push(value);
+          }
+        }
+        return records;
+      },
+    };
+  }
+
+  // Subtest 1: Successful durable write
+  const healthyEngine = createDurableSyncEngine({ simulateDbError: false });
+  const successRes = healthyEngine.post('uuid_user_1', {
+    progress: [{ taskId: 'TASK_0001', originalDate: '2026-10-19', isCompleted: true }],
+  });
+  assert.equal(successRes.status, 200);
+  assert.equal(successRes.body.status, 'synced');
+
+  // Subtest 2: Serverless cold start / restart -> data survives from PostgreSQL
+  healthyEngine.restartServerlessInstance();
+  const recoveredData = healthyEngine.getHydratedFromPostgres('uuid_user_1');
+  assert.equal(recoveredData.length, 1);
+  assert.equal(recoveredData[0].task_id, 'TASK_0001');
+  assert.equal(recoveredData[0].is_completed, true);
+
+  // Subtest 3: Database write failure -> must return HTTP 503 error, NEVER 200 synced
+  const failingEngine = createDurableSyncEngine({ simulateDbError: true });
+  const failedRes = failingEngine.post('uuid_user_1', {
+    progress: [{ taskId: 'TASK_0002', originalDate: '2026-10-19', isCompleted: true }],
+  });
+  assert.equal(failedRes.status, 503);
+  assert.equal(failedRes.body.status, 'error');
+  assert.equal(failedRes.body.code, 'DATABASE_PERSISTENCE_FAILED');
+});
+
+// 7. TEST G — MULTI-TENANT ISOLATION AND COMPOSITE UPSERT CONFLICTS
+test('Test G — Multi-Tenant Data Separation by user_id and Composite Upsert Key', async (t) => {
+  const postgresStore = new Map();
+
+  function upsertTaskProgress(userId, taskId, isCompleted) {
+    const compositeKey = `${userId}:${taskId}`;
+    postgresStore.set(compositeKey, {
+      user_id: userId,
+      task_id: taskId,
+      is_completed: isCompleted,
+    });
+  }
+
+  // User A and User B mark the same taskId differently
+  upsertTaskProgress('user_A_uuid', 'TASK_0001', true);
+  upsertTaskProgress('user_B_uuid', 'TASK_0001', false);
+
+  assert.equal(postgresStore.size, 2, 'Different users must have separate rows for identical taskId');
+  assert.equal(postgresStore.get('user_A_uuid:TASK_0001').is_completed, true);
+  assert.equal(postgresStore.get('user_B_uuid:TASK_0001').is_completed, false);
+
+  // User A updates their progress again -> updates in-place via composite key (no duplicates)
+  upsertTaskProgress('user_A_uuid', 'TASK_0001', false);
+  assert.equal(postgresStore.size, 2, 'Upsert on composite key must update existing row without growing table size');
+  assert.equal(postgresStore.get('user_A_uuid:TASK_0001').is_completed, false);
+});

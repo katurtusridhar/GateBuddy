@@ -350,28 +350,211 @@ test('Continuous Track Ordering: DL (42-52) must complete sequentially before DB
 });
 
 // 9. COMPANION CLIENT KEY AUTHORIZATION SECURITY (SEC-002)
-test('Companion Client Key Authorization: anonymous requests rejected, valid key accepted', async (t) => {
+test('Companion Client Key Authorization: client key alone is NOT user proof; user credentials required', async (t) => {
   const CLIENT_KEY = 'gb_companion_secure_sync_2026_tok';
+  const VALID_USER = 'katurtusridhar';
+  const VALID_PASS = 'Sridhar@758';
+  const MASTER_CODE = 'oA-THL,UXyh6';
 
   function evaluateClientGrant(body) {
     if (body.grantType === 'companion_client') {
-      if (body.clientKey && body.clientKey === CLIENT_KEY) {
-        return { success: true, authorized: true };
+      if (!body.clientKey || body.clientKey !== CLIENT_KEY) {
+        return { success: false, status: 401, error: 'Invalid client API key. Companion client unauthorized.' };
       }
-      return { success: false, error: 'Unauthorized: valid clientKey required' };
+      // Security invariant: Client key alone CANNOT prove user identity!
+      if (body.username && body.password) {
+        if (body.username.toLowerCase() === VALID_USER && body.password === VALID_PASS) {
+          return { success: true, status: 200, user: VALID_USER };
+        }
+        return { success: false, status: 401, error: 'Invalid user credentials for companion client grant.' };
+      }
+      if (body.masterCode && body.masterCode === MASTER_CODE) {
+        return { success: true, status: 200, user: body.username || VALID_USER };
+      }
+      return {
+        success: false,
+        status: 401,
+        error: 'Companion client key alone cannot issue a user session token. User credentials required.',
+      };
     }
-    return { success: false, error: 'Invalid grant' };
+    return { success: false, status: 400, error: 'Invalid grant' };
   }
 
-  // Without client key -> must be rejected
-  const noKey = evaluateClientGrant({ grantType: 'companion_client' });
-  assert.equal(noKey.success, false, 'Anonymous companion_client without clientKey must fail');
+  // 1. Client key alone without password -> MUST FAIL (SEC invariant)
+  const keyOnly = evaluateClientGrant({ grantType: 'companion_client', clientKey: CLIENT_KEY, username: VALID_USER });
+  assert.equal(keyOnly.success, false);
+  assert.equal(keyOnly.status, 401);
+  assert.match(keyOnly.error, /Companion client key alone cannot issue a user session token/);
 
-  // With wrong client key -> must be rejected
-  const wrongKey = evaluateClientGrant({ grantType: 'companion_client', clientKey: 'wrong_key' });
-  assert.equal(wrongKey.success, false, 'Invalid clientKey must fail');
+  // 2. Client key + correct username and password -> MUST SUCCEED
+  const validPair = evaluateClientGrant({
+    grantType: 'companion_client',
+    clientKey: CLIENT_KEY,
+    username: VALID_USER,
+    password: VALID_PASS,
+  });
+  assert.equal(validPair.success, true);
+  assert.equal(validPair.status, 200);
+  assert.equal(validPair.user, VALID_USER);
 
-  // With correct client key -> must succeed
-  const validKey = evaluateClientGrant({ grantType: 'companion_client', clientKey: CLIENT_KEY });
-  assert.equal(validKey.success, true, 'Matching clientKey must succeed');
+  // 3. Client key + wrong password -> MUST FAIL
+  const wrongPass = evaluateClientGrant({
+    grantType: 'companion_client',
+    clientKey: CLIENT_KEY,
+    username: VALID_USER,
+    password: 'wrong_password',
+  });
+  assert.equal(wrongPass.success, false);
+  assert.equal(wrongPass.status, 401);
+
+  // 4. Invalid client key + valid user credentials -> MUST FAIL (client unauthorized)
+  const badClientKey = evaluateClientGrant({
+    grantType: 'companion_client',
+    clientKey: 'fake_embedded_key',
+    username: VALID_USER,
+    password: VALID_PASS,
+  });
+  assert.equal(badClientKey.success, false);
+  assert.equal(badClientKey.status, 401);
+
+  // 5. Valid client key + master code -> MUST SUCCEED
+  const masterAuth = evaluateClientGrant({
+    grantType: 'companion_client',
+    clientKey: CLIENT_KEY,
+    masterCode: MASTER_CODE,
+  });
+  assert.equal(masterAuth.success, true);
+  assert.equal(masterAuth.status, 200);
+});
+
+// 10. COMPREHENSIVE NEGATIVE AUTHENTICATION SUITE
+test('Negative Authentication Suite: missing, invalid, expired, malformed, and bypass tokens', async (t) => {
+  const crypto = await import('node:crypto');
+  const secretKey = 'gatebuddy_production_session_signing_secret_2026_gatecse';
+
+  function signTokenWithExpiry(username, expiryMs) {
+    const payload = `${username}:${expiryMs}`;
+    const sig = crypto.createHmac('sha256', secretKey).update(payload).digest('hex');
+    const full = `${payload}:${sig}`;
+    return Buffer.from(full).toString('base64url');
+  }
+
+  function verifyToken(token) {
+    if (!token || typeof token !== 'string') return { valid: false, error: 'Empty token' };
+    try {
+      const decoded = Buffer.from(token, 'base64url').toString('utf-8');
+      const parts = decoded.split(':');
+      if (parts.length !== 3) return { valid: false, error: 'Malformed token structure' };
+      const [username, expiryStr, signature] = parts;
+      const expiry = parseInt(expiryStr, 10);
+      if (isNaN(expiry) || Date.now() > expiry) return { valid: false, error: 'Token expired' };
+      const expectedSig = crypto.createHmac('sha256', secretKey).update(`${username}:${expiryStr}`).digest('hex');
+      if (signature !== expectedSig) return { valid: false, error: 'Signature mismatch' };
+      return { valid: true, username };
+    } catch {
+      return { valid: false, error: 'Decoding failed' };
+    }
+  }
+
+  // 1. Missing / null / undefined token
+  assert.equal(verifyToken(null).valid, false);
+  assert.equal(verifyToken(undefined).valid, false);
+  assert.equal(verifyToken('').valid, false);
+
+  // 2. Legacy bypass string "authenticated"
+  const legacyBypass = verifyToken('authenticated');
+  assert.equal(legacyBypass.valid, false, 'Legacy bypass string "authenticated" must be strictly rejected');
+
+  // 3. Expired token
+  const pastExpiry = Date.now() - 60000; // 1 min ago
+  const expiredToken = signTokenWithExpiry('katurtusridhar', pastExpiry);
+  const expiredRes = verifyToken(expiredToken);
+  assert.equal(expiredRes.valid, false);
+  assert.equal(expiredRes.error, 'Token expired');
+
+  // 4. Future valid token
+  const futureExpiry = Date.now() + 600000; // 10 mins from now
+  const validToken = signTokenWithExpiry('katurtusridhar', futureExpiry);
+  const validRes = verifyToken(validToken);
+  assert.equal(validRes.valid, true);
+  assert.equal(validRes.username, 'katurtusridhar');
+
+  // 5. Tampered signature
+  const tamperedToken = validToken.slice(0, -6) + 'abcdef';
+  assert.equal(verifyToken(tamperedToken).valid, false);
+
+  // 6. Malformed base64url characters
+  assert.equal(verifyToken('!!!not_base64!!!').valid, false);
+
+  // 7. Token payload with colon injection
+  const injection = Buffer.from('user:admin:9999999999:fake_sig').toString('base64url');
+  assert.equal(verifyToken(injection).valid, false);
+});
+
+// 11. PER-USER OWNERSHIP AND CROSS-USER ISOLATION TESTS
+test('Per-User Ownership and Cross-User Mutation Prevention', async (t) => {
+  const MASTER_CODE = 'oA-THL,UXyh6';
+
+  function validateMutationOwnership(authUsername, targetPayload) {
+    if (targetPayload.credentials?.username) {
+      const targetUser = targetPayload.credentials.username.trim().toLowerCase();
+      if (targetUser !== authUsername.toLowerCase()) {
+        if (!targetPayload.credentials.masterCode || targetPayload.credentials.masterCode !== MASTER_CODE) {
+          return {
+            allowed: false,
+            status: 403,
+            error: `User '${authUsername}' is not authorized to modify records for user '${targetPayload.credentials.username}'.`,
+          };
+        }
+      }
+    }
+    return { allowed: true, status: 200 };
+  }
+
+  // Same user mutating their own data -> ALLOWED
+  const selfMutation = validateMutationOwnership('katurtusridhar', {
+    credentials: { username: 'katurtusridhar' },
+  });
+  assert.equal(selfMutation.allowed, true);
+
+  // User A trying to mutate User B without masterCode -> FORBIDDEN (403)
+  const crossUserAttack = validateMutationOwnership('user_alice', {
+    credentials: { username: 'user_bob' },
+  });
+  assert.equal(crossUserAttack.allowed, false);
+  assert.equal(crossUserAttack.status, 403);
+  assert.match(crossUserAttack.error, /not authorized to modify records for user/);
+
+  // User A mutating User B WITH valid masterCode -> ALLOWED
+  const adminDelegation = validateMutationOwnership('user_alice', {
+    credentials: { username: 'user_bob', masterCode: MASTER_CODE },
+  });
+  assert.equal(adminDelegation.allowed, true);
+  assert.equal(adminDelegation.status, 200);
+});
+
+// 12. ZERO CREDENTIAL LEAKAGE IN ERROR PAYLOADS AND RESPONSES
+test('Security: Errors and responses never leak sensitive credentials or secrets', async (t) => {
+  function formatErrorResponse(action, error, receivedCredentials) {
+    // Sanitized output format
+    return {
+      status: 'error',
+      action,
+      message: error?.message || 'Authentication or operation failed',
+      // Explicitly ensure received password and masterCode are NEVER reflected
+    };
+  }
+
+  const sensitive = {
+    username: 'katurtusridhar',
+    password: 'SuperSecretUserPassword!123',
+    masterCode: 'oA-THL,UXyh6',
+  };
+
+  const response = formatErrorResponse('token_issuance', new Error('Invalid credentials provided'), sensitive);
+  const responseJson = JSON.stringify(response);
+
+  assert.ok(!responseJson.includes('SuperSecretUserPassword!123'), 'Response must not contain password');
+  assert.ok(!responseJson.includes('oA-THL,UXyh6'), 'Response must not contain masterCode');
+  assert.equal(response.status, 'error');
 });

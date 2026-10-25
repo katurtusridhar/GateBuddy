@@ -33,10 +33,38 @@ export async function POST(req: NextRequest) {
       authenticatedUsername = username || serverCredentials.username;
     }
 
-    // 3. Authenticate via companion client grant (requires verified client key)
+    // 3. Authenticate via companion client grant
+    // SECURITY INVARIANT: Client keys embedded in an APK identify the client application,
+    // but are NOT treated as proof of an individual user's identity or authorization.
+    // The companion_client grant requires BOTH a valid client key AND authenticated user credentials/masterCode.
     if (!authenticatedUsername && grantType === "companion_client") {
-      if (clientKey && timingSafeEqual(clientKey, CLIENT_API_KEY)) {
+      if (!clientKey || !timingSafeEqual(clientKey, CLIENT_API_KEY)) {
+        return NextResponse.json(
+          { success: false, error: "Invalid client API key. Companion client unauthorized." },
+          { status: 401 }
+        );
+      }
+
+      if (username && password) {
+        const loginRes = checkUserLogin(username, password);
+        if (loginRes.success && loginRes.user) {
+          authenticatedUsername = loginRes.user.username;
+        } else {
+          return NextResponse.json(
+            { success: false, error: "Invalid user credentials for companion client grant." },
+            { status: 401 }
+          );
+        }
+      } else if (masterCode && verifyMasterCode(masterCode)) {
         authenticatedUsername = username || serverCredentials.username;
+      } else {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Companion client key alone cannot issue a user session token. User credentials required.",
+          },
+          { status: 401 }
+        );
       }
     }
 
