@@ -1,24 +1,24 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-10-25T11:37:32.000Z",
+  "generatedAt": "2026-10-25T12:15:36.000Z",
   "channel": "debug",
   "packageName": "com.gatecse.companion.debug",
   "recommendedUpdate": {
-    "versionCode": 3,
-    "versionName": "1.0.2",
-    "releaseDate": "2026-10-25T11:37:32.000Z",
+    "versionCode": 4,
+    "versionName": "1.0.3",
+    "releaseDate": "2026-10-25T12:15:36.000Z",
     "releaseType": "standard",
     "changelog": {
-      "summary": "In-app updates and version management verification candidate",
+      "summary": "In-app OTA auto-update verification release candidate",
       "highlights": [
-        "Automated background update checking with checksum and certificate verification",
-        "Direct download and system package installer launch",
-        "Version history inspection and Room schema v3 forward compatibility"
+        "Verified in-app OTA download and package installation flow",
+        "Enhanced update status telemetry and checksum integrity verification",
+        "Seamless backward compatibility with Room schema v3"
       ]
     },
-    "apkUrl": "https://github.com/katurtusridhar/GateBuddy/releases/download/v1.0.2/GateBuddy-v1.0.2.apk",
+    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.3.apk",
     "apkSizeBytes": 20892324,
-    "sha256": "837AACEBF0708A0E2B995455D3D7573D46020220CD9BF56AE593C418F96793B7",
+    "sha256": "75F9509D3340B22E18E1637CE1D51952F26DD56229561C910CDBEF8DB3671AD7",
     "signingCertificate": {
       "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
       "subjectDn": "C=US, O=Android, CN=Android Debug"
@@ -35,6 +35,37 @@
     }
   },
   "releases": [
+    {
+      "versionCode": 4,
+      "versionName": "1.0.3",
+      "releaseDate": "2026-10-25T12:15:36.000Z",
+      "releaseType": "standard",
+      "changelog": {
+        "summary": "In-app OTA auto-update verification release candidate",
+        "highlights": [
+          "Verified in-app OTA download and package installation flow",
+          "Enhanced update status telemetry and checksum integrity verification",
+          "Seamless backward compatibility with Room schema v3"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.3.apk",
+      "apkSizeBytes": 20892324,
+      "sha256": "75F9509D3340B22E18E1637CE1D51952F26DD56229561C910CDBEF8DB3671AD7",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
     {
       "versionCode": 3,
       "versionName": "1.0.2",

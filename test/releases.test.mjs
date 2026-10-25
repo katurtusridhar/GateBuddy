@@ -85,7 +85,7 @@ test('Release Catalog API & Manifest Tests', async (t) => {
     assert.equal(debugCatalog.channel, 'debug');
     assert.equal(debugCatalog.packageName, 'com.gatecse.companion.debug');
     assert.ok(Array.isArray(debugCatalog.releases), 'releases must be an array');
-    assert.equal(debugCatalog.releases.length >= 2, true, 'releases must contain baseline and candidate');
+    assert.equal(debugCatalog.releases.length >= 3, true, 'releases must contain baseline, v1.0.2 and v1.0.3');
 
     // Baseline v1.0.1
     const baseline = debugCatalog.releases.find(r => r.versionCode === 2);
@@ -98,18 +98,27 @@ test('Release Catalog API & Manifest Tests', async (t) => {
     assert.equal(baseline.compatibility.targetSdk, 35);
     assert.equal(baseline.database.databaseVersion, 3);
 
-    // Forward Update Candidate v1.0.2
-    const candidate = debugCatalog.releases.find(r => r.versionCode === 3);
-    assert.ok(candidate, 'Candidate release v1.0.2 (code 3) must exist');
-    assert.equal(candidate.versionName, '1.0.2');
+    // Release v1.0.2
+    const rel102 = debugCatalog.releases.find(r => r.versionCode === 3);
+    assert.ok(rel102, 'Release v1.0.2 (code 3) must exist');
+    assert.equal(rel102.versionName, '1.0.2');
+    assert.equal(rel102.apkSizeBytes, 20892324);
+    assert.equal(rel102.sha256, '837AACEBF0708A0E2B995455D3D7573D46020220CD9BF56AE593C418F96793B7');
+    assert.equal(rel102.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
+    assert.equal(rel102.database.databaseVersion, 3);
+
+    // Forward Update Candidate v1.0.3
+    const candidate = debugCatalog.releases.find(r => r.versionCode === 4);
+    assert.ok(candidate, 'Candidate release v1.0.3 (code 4) must exist');
+    assert.equal(candidate.versionName, '1.0.3');
     assert.equal(candidate.apkSizeBytes, 20892324);
-    assert.equal(candidate.sha256, '837AACEBF0708A0E2B995455D3D7573D46020220CD9BF56AE593C418F96793B7');
+    assert.equal(candidate.sha256, '75F9509D3340B22E18E1637CE1D51952F26DD56229561C910CDBEF8DB3671AD7');
     assert.equal(candidate.signingCertificate.sha256Fingerprint, '78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73');
     assert.equal(candidate.database.databaseVersion, 3);
 
     // Recommended update
     assert.ok(debugCatalog.recommendedUpdate, 'recommendedUpdate must be present');
-    assert.equal(debugCatalog.recommendedUpdate.versionCode, 3);
+    assert.equal(debugCatalog.recommendedUpdate.versionCode, 4);
     assert.equal(debugCatalog.recommendedUpdate.sha256, candidate.sha256);
   });
 
