@@ -1,0 +1,40 @@
+{
+  "manifestVersion": 1,
+  "generatedAt": "2026-10-25T11:10:00.000Z",
+  "channel": "debug",
+  "packageName": "com.gatecse.companion.debug",
+  "recommendedUpdate": null,
+  "releases": [
+    {
+      "versionCode": 2,
+      "versionName": "1.0.1",
+      "releaseDate": "2026-10-25T10:22:37.000Z",
+      "releaseType": "standard",
+      "changelog": {
+        "summary": "Continuous lecture stream ordering, DPP logging, and glance widgets",
+        "highlights": [
+          "Sequential lecture ordering across continuous tracks",
+          "DPP analytics telemetry and Sunday test subject tracking",
+          "Glance countdown and today's tasks widgets"
+        ]
+      },
+      "apkUrl": "https://github.com/katurtusridhar/GateBuddy/releases/download/v1.0.1/GateBuddy-v1.0.1.apk",
+      "apkSizeBytes": 21040765,
+      "sha256": "3EBCE6420763E897B1DCC25A44FE286385D059C8587B76A5394A2798A140C40D",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    }
+  ]
+}
