@@ -1,31 +1,31 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-10-25T18:45:00.000Z",
+  "generatedAt": "2026-10-25T19:30:00.000Z",
   "channel": "debug",
   "packageName": "com.gatecse.companion.debug",
   "recommendedUpdate": {
-    "releaseId": "rel-1.0.8-b11",
-    "behaviorVersion": "1.0.8",
-    "installVersionCode": 11,
-    "installVersionName": "1.0.8",
-    "versionCode": 11,
-    "versionName": "1.0.8",
+    "releaseId": "rel-1.0.9-b12",
+    "behaviorVersion": "1.0.9",
+    "installVersionCode": 12,
+    "installVersionName": "1.0.9",
+    "versionCode": 12,
+    "versionName": "1.0.9",
     "releaseType": "standard",
-    "releaseDate": "2026-10-25T18:45:00.000Z",
+    "releaseDate": "2026-10-25T19:30:00.000Z",
     "verificationStatus": "verified",
     "changelog": {
-      "summary": "Companion End-to-End Sync Parity & Pure Read-Only Mirror Architecture",
+      "summary": "Full Recovery Lifecycle Sync & Realtime Mirror Precision",
       "highlights": [
-        "Automatic GoTrue user provisioning and profile persistence in Supabase",
-        "Auto-initialization of companion session on first launch without manual login",
-        "Unified task ID resolution supporting both canonical schedule IDs and subject codes",
-        "Pure read-only website architecture mirroring companion app authority with 0 discrepancies",
-        "Eliminated false backlog rescheduling prompts and restored Sunday recovery catch-up tasks"
+        "Synchronize both completed and active recoveries across app and web mirror",
+        "Zero-flicker mirror state: Eliminated static seed data causes of false 75% or 0% progress",
+        "Deterministic recovery parity guarantee preserving Sunday catch-up tasks",
+        "Automatic background & focus-based synchronization without manual intervention",
+        "Aligned execution score and points telemetry across all 5 Sunday tasks"
       ]
     },
-    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.8.apk",
-    "apkSizeBytes": 20941476,
-    "sha256": "16a800341bbdea1d3c7c7807687cbdb323c9a9c79d11a983636e3e64f299c41c",
+    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.9.apk",
+    "apkSizeBytes": 20941480,
+    "sha256": "ac2704adfce4ac4c0bf8642e92961a2853f71ad47bf8ffab87fbb27b61ef9d21",
     "signingCertificate": {
       "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
       "subjectDn": "C=US, O=Android, CN=Android Debug"
@@ -42,6 +42,44 @@
     }
   },
   "releases": [
+    {
+      "releaseId": "rel-1.0.9-b12",
+      "behaviorVersion": "1.0.9",
+      "installVersionCode": 12,
+      "installVersionName": "1.0.9",
+      "versionCode": 12,
+      "versionName": "1.0.9",
+      "releaseType": "standard",
+      "releaseDate": "2026-10-25T19:30:00.000Z",
+      "verificationStatus": "verified",
+      "changelog": {
+        "summary": "Full Recovery Lifecycle Sync & Realtime Mirror Precision",
+        "highlights": [
+          "Synchronize both completed and active recoveries across app and web mirror",
+          "Zero-flicker mirror state: Eliminated static seed data causes of false 75% or 0% progress",
+          "Deterministic recovery parity guarantee preserving Sunday catch-up tasks",
+          "Automatic background & focus-based synchronization without manual intervention",
+          "Aligned execution score and points telemetry across all 5 Sunday tasks"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.9.apk",
+      "apkSizeBytes": 20941480,
+      "sha256": "ac2704adfce4ac4c0bf8642e92961a2853f71ad47bf8ffab87fbb27b61ef9d21",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
     {
       "releaseId": "rel-1.0.8-b11",
       "behaviorVersion": "1.0.8",

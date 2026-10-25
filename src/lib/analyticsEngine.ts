@@ -27,6 +27,9 @@ export function calculateDailyScore(
   const isSunday = isSundayDate(targetDateStr);
 
   let points = 0;
+  let isTestComplete = false;
+  let isRevComplete = false;
+  let isPyqComplete = false;
 
   if (isSunday || dayTasks.some((t) => t.isSundayActivity)) {
     // 1. Sunday Test (max 20 pts based on score)
@@ -35,7 +38,7 @@ export function calculateDailyScore(
       || (scheduledTest ? progressMap.get(scheduledTest.id) : undefined)
       || Array.from(progressMap.values()).find((p) => p.originalDate === targetDateStr && p.taskId.startsWith("SUNDAY_TEST_"));
     const assessment = assessments.find((a: any) => (a.testDate || a.test_date) === targetDateStr);
-    const isTestComplete = testProg?.isCompleted || !!assessment;
+    isTestComplete = Boolean(testProg?.isCompleted || !!assessment);
 
     if (isTestComplete) {
       let pct = assessment?.percentage;
@@ -57,7 +60,8 @@ export function calculateDailyScore(
     // 2. Sunday Revision (+5 pts)
     const revProg = progressMap.get("BOOSTER_REV_" + targetDateStr)
       || (dayTasks.find((t) => t.isRevision) ? progressMap.get(dayTasks.find((t) => t.isRevision)!.id) : undefined);
-    if (revProg?.isCompleted) {
+    isRevComplete = Boolean(revProg?.isCompleted);
+    if (isRevComplete) {
       points += 5;
     } else if (isPast && dayTasks.some((t) => t.isRevision)) {
       points -= 1;
@@ -67,7 +71,8 @@ export function calculateDailyScore(
     const scheduledPyq = dayTasks.find((t) => t.type === "SUNDAY_PYQ" || (t.isSundayActivity && t.slot === 2));
     const pyqProg = progressMap.get("BOOSTER_PS_" + targetDateStr)
       || (scheduledPyq ? progressMap.get(scheduledPyq.id) : undefined);
-    if (pyqProg?.isCompleted) {
+    isPyqComplete = Boolean(pyqProg?.isCompleted);
+    if (isPyqComplete) {
       points += 5;
     } else if (isPast && (scheduledPyq || (isSunday && dayTasks.length >= 2))) {
       points -= 1;
@@ -76,8 +81,10 @@ export function calculateDailyScore(
     // Non-Sunday recovery or catch-up tasks scheduled for today
     for (const task of dayTasks) {
       if (!task.isSundayActivity && task.type !== "SUNDAY_TEST" && task.type !== "SUNDAY_PYQ") {
-        const prog = progressMap.get(task.id);
-        if (prog?.isCompleted) {
+        const cleanId = (task.id || "").replace(/^REC_/, "");
+        const prog = progressMap.get(task.id) || progressMap.get(cleanId);
+        const isDone = (task as any).isCompleted === true || prog?.isCompleted === true;
+        if (isDone) {
           points += 10;
         } else if (isPast) {
           points -= 2;
@@ -87,8 +94,10 @@ export function calculateDailyScore(
   } else {
     // Weekday Point System
     for (const task of dayTasks) {
-      const prog = progressMap.get(task.id);
-      if (prog?.isCompleted) {
+      const cleanId = (task.id || "").replace(/^REC_/, "");
+      const prog = progressMap.get(task.id) || progressMap.get(cleanId);
+      const isDone = (task as any).isCompleted === true || prog?.isCompleted === true;
+      if (isDone) {
         points += 10;
       } else if (isPast) {
         points -= 2; // Missed penalty on past days
@@ -107,8 +116,26 @@ export function calculateDailyScore(
     if (ct.isCompleted) points += ct.pointsValue;
   }
 
-  const totalScheduled = dayTasks.length;
-  const completedCount = dayTasks.filter((t) => progressMap.get(t.id)?.isCompleted === true).length;
+  const isSundayWorkflow = isSunday || dayTasks.some((t) => t.isSundayActivity);
+  const totalScheduled = isSundayWorkflow
+    ? 3 + dayTasks.filter((t) => !t.isSundayActivity && t.type !== "SUNDAY_TEST" && t.type !== "SUNDAY_PYQ").length + customTasks.length
+    : dayTasks.length + customTasks.length;
+
+  const completedCount = isSundayWorkflow
+    ? (isTestComplete ? 1 : 0) +
+      (isRevComplete ? 1 : 0) +
+      (isPyqComplete ? 1 : 0) +
+      dayTasks.filter((t) => {
+        if (t.isSundayActivity || t.type === "SUNDAY_TEST" || t.type === "SUNDAY_PYQ") return false;
+        const cleanId = (t.id || "").replace(/^REC_/, "");
+        return (t as any).isCompleted === true || progressMap.get(t.id)?.isCompleted === true || progressMap.get(cleanId)?.isCompleted === true;
+      }).length +
+      customTasks.filter((c) => c.isCompleted).length
+    : dayTasks.filter((t) => {
+        const cleanId = (t.id || "").replace(/^REC_/, "");
+        return (t as any).isCompleted === true || progressMap.get(t.id)?.isCompleted === true || progressMap.get(cleanId)?.isCompleted === true;
+      }).length + customTasks.filter((c) => c.isCompleted).length;
+
   const scorePercent =
     totalScheduled > 0 ? Math.round((completedCount / totalScheduled) * 100) : 0;
 

@@ -16,7 +16,7 @@ import {
   SyncState,
   UserCredentials,
 } from "./types";
-import { getTodayDateStr, compareDateStrings, isSundayDate } from "./dateUtils";
+import { getTodayDateStr, compareDateStrings, isSundayDate, formatDateStr } from "./dateUtils";
 import { getCodeForSubject } from "./subjectRegistry";
 import { INITIAL_ACHIEVEMENTS } from "./achievementManager";
 import { getCandidateRescheduleDates, getCandidateSlotsInfo } from "./recoveryEngine";
@@ -47,98 +47,9 @@ export function findMatchingScheduleTask(tasks: ScheduleTask[], queryId: string 
   return tasks.find((t) => matchScheduleTask(t, clean));
 }
 
-// Seed user data matching real Android app state over Oct 19-22, 2026
-const INITIAL_PROGRESS_LIST: TaskProgress[] = [
-  {
-    taskId: "TASK_0005",
-    originalDate: "2026-10-21",
-    isCompleted: true,
-    completedAtTimestamp: 1729512000000,
-    completionType: "ON_TIME",
-    notes: "Completed on Wed Oct 21",
-  },
-  {
-    taskId: "DL_44",
-    originalDate: "2026-10-21",
-    isCompleted: true,
-    completedAtTimestamp: 1729512000000,
-    completionType: "ON_TIME",
-    notes: "Completed on Wed Oct 21",
-  },
-];
-
-const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [
-  {
-    id: 101,
-    taskId: "TASK_0001",
-    originalDate: "2026-10-19",
-    recoveryDate: "2026-10-25",
-    assignedAtTimestamp: 1729340000000,
-    isCompleted: false,
-    priorityLevel: 2,
-    status: "MANUAL_CONFIRMED",
-  },
-  {
-    id: 102,
-    taskId: "TASK_0002",
-    originalDate: "2026-10-19",
-    recoveryDate: "2026-10-25",
-    assignedAtTimestamp: 1729340000000,
-    isCompleted: false,
-    priorityLevel: 2,
-    status: "MANUAL_CONFIRMED",
-  },
-  {
-    id: 103,
-    taskId: "TASK_0003",
-    originalDate: "2026-10-20",
-    recoveryDate: "2026-11-01",
-    assignedAtTimestamp: 1729426000000,
-    isCompleted: false,
-    priorityLevel: 2,
-    status: "MANUAL_CONFIRMED",
-  },
-  {
-    id: 104,
-    taskId: "TASK_0004",
-    originalDate: "2026-10-20",
-    recoveryDate: "2026-11-01",
-    assignedAtTimestamp: 1729426000000,
-    isCompleted: false,
-    priorityLevel: 2,
-    status: "MANUAL_CONFIRMED",
-  },
-  {
-    id: 105,
-    taskId: "TASK_0006",
-    originalDate: "2026-10-21",
-    recoveryDate: "2026-11-08",
-    assignedAtTimestamp: 1729512000000,
-    isCompleted: false,
-    priorityLevel: 2,
-    status: "MANUAL_CONFIRMED",
-  },
-  {
-    id: 106,
-    taskId: "TASK_0007",
-    originalDate: "2026-10-22",
-    recoveryDate: "2026-11-08",
-    assignedAtTimestamp: 1729598000000,
-    isCompleted: false,
-    priorityLevel: 2,
-    status: "MANUAL_CONFIRMED",
-  },
-  {
-    id: 107,
-    taskId: "TASK_0008",
-    originalDate: "2026-10-22",
-    recoveryDate: "2026-11-15",
-    assignedAtTimestamp: 1729598000000,
-    isCompleted: false,
-    priorityLevel: 2,
-    status: "MANUAL_CONFIRMED",
-  },
-];
+// Authoritative mirror: Pure state driven strictly from Android Companion sync & local storage
+const INITIAL_PROGRESS_LIST: TaskProgress[] = [];
+const INITIAL_RECOVERIES_LIST: RecoveryAssignment[] = [];
 
 interface AppContextType {
   user: UserProfile | null;
@@ -497,13 +408,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Background realtime pull every 3 seconds to catch Android phone updates instantly
   useEffect(() => {
     if (!isLoaded) return;
-    const interval = setInterval(async () => {
+
+    const pullAuthoritativeSync = async (forceFull: boolean = false) => {
       try {
-        const res = await fetch(`/api/sync?since=${lastSyncTimestampRef.current}`);
+        const query = forceFull ? "/api/sync?since=0" : `/api/sync?since=${lastSyncTimestampRef.current}`;
+        const res = await fetch(query);
         if (!res.ok) return;
         const result = await res.json();
-        if (result.hasUpdates && result.data) {
-          lastSyncTimestampRef.current = result.timestamp;
+        if ((forceFull || result.hasUpdates) && result.data) {
+          lastSyncTimestampRef.current = result.timestamp || Date.now();
 
           if (Array.isArray(result.data.progress)) {
             const map = new Map<string, TaskProgress>();
@@ -583,8 +496,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // silent background network error
       }
-    }, 3000);
-    return () => clearInterval(interval);
+    };
+
+    const interval = setInterval(() => pullAuthoritativeSync(false), 3000);
+    const onFocus = () => pullAuthoritativeSync(true);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") pullAuthoritativeSync(true);
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [isLoaded]);
 
   // Canonical ordered core lectures for Track 1 (Slot 1) and Track 2 (Slot 2)
@@ -985,6 +912,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           r.recoveryDate === targetDateStr &&
           (r.status === "ACTIVE" || r.status === "MANUAL_CONFIRMED" || r.status === "COMPLETED")
       );
+
+      // Parity guarantee: If any past task was completed as a recovery on this date in progress,
+      // ensure it appears in recoveriesForDate so today's missions match the companion app exactly
+      progress.forEach((prog, pTaskId) => {
+        if (prog.isCompleted && (prog.completionType === "RECOVERY" || prog.completionType === "RECOVERY_LATE")) {
+          const compDate = prog.completedAtTimestamp ? formatDateStr(prog.completedAtTimestamp) : targetDateStr;
+          if (compDate === targetDateStr) {
+            const alreadyPresent = recoveriesForDate.some(
+              (r) =>
+                r.taskId === pTaskId ||
+                findMatchingScheduleTask(tasks, r.taskId)?.id === findMatchingScheduleTask(tasks, pTaskId)?.id
+            );
+            if (!alreadyPresent) {
+              const matched = findMatchingScheduleTask(tasks, pTaskId);
+              if (matched) {
+                recoveriesForDate.push({
+                  id: -1,
+                  taskId: matched.id,
+                  originalDate: matched.date,
+                  recoveryDate: targetDateStr,
+                  assignedAtTimestamp: prog.completedAtTimestamp || Date.now(),
+                  isCompleted: true,
+                  priorityLevel: 1,
+                  status: "COMPLETED",
+                });
+              }
+            }
+          }
+        }
+      });
+
+      // Sort recovery tasks predictably: slot 1 (Track 1 / DL) before slot 2 (Track 2 / CN)
+      recoveriesForDate.sort((a, b) => {
+        const taskA = findMatchingScheduleTask(tasks, a.taskId);
+        const taskB = findMatchingScheduleTask(tasks, b.taskId);
+        return (taskA?.slot || 0) - (taskB?.slot || 0);
+      });
 
       for (let rIdx = 0; rIdx < recoveriesForDate.length; rIdx++) {
         const rec = recoveriesForDate[rIdx];
