@@ -1,0 +1,25 @@
+<resources>
+    <!-- Premium Dark Aesthetic Palette -->
+    <color name="primary">#6366F1</color> <!-- Electric Indigo -->
+    <color name="on_primary">#FFFFFF</color>
+    <color name="primary_container">#312E81</color>
+    <color name="on_primary_container">#E0E7FF</color>
+    
+    <color name="secondary">#38BDF8</color> <!-- Sky Blue -->
+    <color name="on_secondary">#082F49</color>
+    
+    <color name="background_dark">#090D16</color> <!-- Deep Onyx -->
+    <color name="surface_dark">#131B2E</color> <!-- Deep Navy Surface -->
+    <color name="surface_card">#1E293B</color> <!-- Slate Card -->
+    <color name="surface_card_elevated">#28354D</color>
+    
+    <color name="text_primary">#F8FAFC</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_muted">#64748B</color>
+    
+    <!-- Status Colors -->
+    <color name="status_completed">#10B981</color> <!-- Emerald Green -->
+    <color name="status_overdue">#EF4444</color> <!-- Rose Red -->
+    <color name="status_recovery">#F59E0B</color> <!-- Amber -->
+    <color name="status_upcoming">#6366F1</color> <!-- Indigo -->
+</resources>

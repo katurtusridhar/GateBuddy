@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">GateBuddy</string>
+    <string name="app_tagline">Your Daily GATE Preparation Command Centre</string>
+    
+    <!-- Widget Strings -->
+    <string name="widget_countdown_title">GateBuddy Countdown</string>
+    <string name="widget_countdown_desc">Shows days remaining until your target GATE CSE exam.</string>
+    
+    <string name="widget_today_title">GateBuddy Today</string>
+    <string name="widget_today_desc">Shows Slot 1, Slot 2 &amp; Daily Goals with completion status.</string>
+    
+    <string name="widget_progress_title">GateBuddy Health</string>
+    <string name="widget_progress_desc">Shows syllabus progress, daily score points, and streak.</string>
+    
+    <string name="widget_test_title">GateBuddy Test Event</string>
+    <string name="widget_test_desc">Shows the upcoming Sunday test, revision, and PYQ goals.</string>
+</resources>
