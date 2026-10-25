@@ -106,24 +106,17 @@ class UpdateSystemTest {
 
     @Test
     fun testUpdateSelectionLogicWithForwardRelease() {
-        val installedCode = 2L
-        val installedName = "1.0.1"
-        val candidate = createSampleRelease(versionCode = 3, versionName = "1.0.2", releaseType = "standard")
+        // Test updating from v1.0.1 (code 2) to v1.0.2 (code 3)
+        val installedCode2 = 2L
+        val candidate102 = createSampleRelease(versionCode = 3, versionName = "1.0.2", releaseType = "standard")
+        val updateAvailable102 = candidate102.releaseType == "standard" && candidate102.versionCode > installedCode2
+        assertTrue("A standard release with versionCode 3 > installed 2 must trigger an update", updateAvailable102)
 
-        val catalog = ReleaseCatalog(
-            manifestVersion = 1,
-            channel = "debug",
-            packageName = "com.gatecse.companion.debug",
-            recommendedUpdate = candidate,
-            releases = listOf(candidate)
-        )
-
-        // Evaluate selection
-        val updateAvailable = catalog.recommendedUpdate != null &&
-                catalog.recommendedUpdate.releaseType == "standard" &&
-                catalog.recommendedUpdate.versionCode > installedCode
-
-        assertTrue("A standard release with versionCode 3 > installed 2 must trigger an update", updateAvailable)
+        // Test updating from v1.0.2 (code 3) to v1.0.3 (code 4)
+        val installedCode3 = 3L
+        val candidate103 = createSampleRelease(versionCode = 4, versionName = "1.0.3", releaseType = "standard")
+        val updateAvailable103 = candidate103.releaseType == "standard" && candidate103.versionCode > installedCode3
+        assertTrue("A standard release with versionCode 4 > installed 3 must trigger an update", updateAvailable103)
     }
 
     @Test
@@ -252,11 +245,11 @@ class UpdateSystemTest {
 
     @Test
     fun testActualCandidateApkArtifactIntegrity() {
-        val apkFile = java.io.File("C:/Users/sridh/Downloads/GateBuddy-v1.0.2.apk")
-        if (apkFile.exists()) {
-            assertEquals("Candidate APK size must match exact build output", 20892324L, apkFile.length())
+        val apk102 = java.io.File("C:/Users/sridh/Downloads/GateBuddy-v1.0.2.apk")
+        if (apk102.exists()) {
+            assertEquals("Candidate v1.0.2 size must match exact build output", 20892324L, apk102.length())
             val md = MessageDigest.getInstance("SHA-256")
-            apkFile.inputStream().use { stream ->
+            apk102.inputStream().use { stream ->
                 val buffer = ByteArray(65536)
                 var read: Int
                 while (stream.read(buffer).also { read = it } != -1) {
@@ -265,8 +258,27 @@ class UpdateSystemTest {
             }
             val computedHash = md.digest().joinToString("") { "%02x".format(it) }
             assertEquals(
-                "Candidate APK SHA-256 must match exactly",
+                "Candidate v1.0.2 SHA-256 must match exactly",
                 "837aacebf0708a0e2b995455d3d7573d46020220cd9bf56ae593c418f96793b7",
+                computedHash.lowercase()
+            )
+        }
+
+        val apk103 = java.io.File("C:/Users/sridh/Downloads/GateBuddy-v1.0.3.apk")
+        if (apk103.exists()) {
+            assertEquals("Candidate v1.0.3 size must match exact build output", 20892324L, apk103.length())
+            val md = MessageDigest.getInstance("SHA-256")
+            apk103.inputStream().use { stream ->
+                val buffer = ByteArray(65536)
+                var read: Int
+                while (stream.read(buffer).also { read = it } != -1) {
+                    md.update(buffer, 0, read)
+                }
+            }
+            val computedHash = md.digest().joinToString("") { "%02x".format(it) }
+            assertEquals(
+                "Candidate v1.0.3 SHA-256 must match exactly",
+                "75f9509d3340b22e18e1637ce1d51952f26dd56229561c910cdbef8db3671ad7",
                 computedHash.lowercase()
             )
         }
