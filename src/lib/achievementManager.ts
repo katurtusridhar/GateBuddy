@@ -70,7 +70,7 @@ export function evaluateAchievements(
   // Any past task before today that is not completed is debt, even if rescheduled to future Sundays
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const pastUncompletedCount = allTasks.filter(
-    (t) => t.date < todayStr && !t.isSundayActivity && !t.isBuffer && !t.isRevision && progressMap.get(t.id)?.isCompleted !== true
+    (t) => t.date < todayStr && !t.isSundayActivity && !t.isBuffer && !t.isRevision && (t.type === "RECORDED" || t.type === "LIVE") && progressMap.get(t.id)?.isCompleted !== true
   ).length;
 
   const backlogBadge = newlyEvaluated.find((a) => a.code === "BACKLOG_CLEARED");

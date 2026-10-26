@@ -208,7 +208,16 @@ export function calculateAdherenceAndForecast(
         completedLate++;
       }
     } else {
-      if (compareDateStrings(task.date, currentDateStr) < 0) {
+      const isLecture =
+        !task.isSundayActivity &&
+        !task.isBuffer &&
+        !task.isRevision &&
+        (task.type === "RECORDED" || task.type === "LIVE") &&
+        !task.subject.toLowerCase().includes("revision") &&
+        !task.subject.toLowerCase().includes("problem") &&
+        !task.title.toLowerCase().includes("revision") &&
+        !task.title.toLowerCase().includes("problem");
+      if (compareDateStrings(task.date, currentDateStr) < 0 && isLecture) {
         currentBacklog++;
       }
     }
@@ -311,7 +320,7 @@ export function calculateAdherenceAndForecast(
 
   if (currentBacklog > 5 || (averageDailyPoints < 12 && onTimeAdherencePercent < 60)) {
     health = "BEHIND";
-    healthReason = `Behind schedule: Backlog is ${currentBacklog} missed tasks and 7-day average is ${averageDailyPoints} pts/day. Buffer recovery advised.`;
+    healthReason = `Behind schedule: Backlog is ${currentBacklog} missed lectures and 7-day average is ${averageDailyPoints} pts/day. Buffer recovery advised.`;
   } else if (currentBacklog > 0 || averageDailyPoints < 22 || onTimeAdherencePercent < 80) {
     health = "AT_RISK";
     healthReason = `Caution: 7-day average at ${averageDailyPoints} pts/day with ${currentBacklog} overdue tasks.`;

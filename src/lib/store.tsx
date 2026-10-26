@@ -1057,10 +1057,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         !t.isSundayActivity &&
         !t.isBuffer &&
         !t.isRevision &&
-        t.type !== "BOOSTER_REVISION" &&
-        t.type !== "BOOSTER_PROBLEM_SOLVING" &&
-        t.type !== "SUNDAY_TEST" &&
-        t.type !== "SUNDAY_PYQ" &&
+        (t.type === "RECORDED" || t.type === "LIVE") &&
         !t.subject.toLowerCase().includes("revision") &&
         !t.subject.toLowerCase().includes("problem") &&
         !t.title.toLowerCase().includes("revision") &&

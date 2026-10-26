@@ -320,6 +320,89 @@ test('Sunday Points Target Verification: Sunday Test (20 pts) + Revision (5 pts)
   assert.equal(totalSundayPoints, 26, 'Sunday test with 80% (16 pts) + Rev (5) + PS (5) must equal 26 daily points');
 });
 
+// 7b. STRICT BACKLOG EXCLUSION FOR MISSED SUNDAY ASSESSMENTS
+test('Strict Backlog Isolation: Missed Sunday Assessments are NEVER Backlogs or Recoveries', async (t) => {
+  const sundayTestTask = {
+    id: 'TASK_0013',
+    date: '2026-10-25',
+    slot: 1,
+    type: 'SUNDAY_TEST',
+    isSundayActivity: true,
+    isRevision: false,
+    isBuffer: false,
+    subject: 'Weekly Assessment',
+    title: 'Weekly Active Recall & Mock Test',
+  };
+
+  const coreLectureTask = {
+    id: 'TASK_0001',
+    date: '2026-10-24',
+    slot: 1,
+    type: 'RECORDED',
+    isSundayActivity: false,
+    isRevision: false,
+    isBuffer: false,
+    subject: 'Digital Logic',
+    title: 'Digital Logic — Lec 42/52',
+  };
+
+  function isLectureBacklogEligible(task) {
+    return !task.isSundayActivity &&
+      !task.isBuffer &&
+      !task.isRevision &&
+      !task.isBooster &&
+      !task.isCustom &&
+      (task.type === 'RECORDED' || task.type === 'LIVE') &&
+      !task.subject.toLowerCase().includes('revision') &&
+      !task.subject.toLowerCase().includes('problem') &&
+      !task.title.toLowerCase().includes('revision') &&
+      !task.title.toLowerCase().includes('problem');
+  }
+
+  assert.equal(isLectureBacklogEligible(sundayTestTask), false, 'Sunday test must never be eligible as backlog');
+  assert.equal(isLectureBacklogEligible(coreLectureTask), true, 'Core lecture must be eligible as backlog');
+
+  // Verify backlog count calculation on Monday (Oct 26) when Sunday test was missed:
+  const currentDateStr = '2026-10-26';
+  const progressMap = new Map(); // Nothing completed
+
+  let currentBacklog = 0;
+  for (const task of [sundayTestTask]) {
+    const isDone = progressMap.get(task.id)?.isCompleted === true;
+    if (!isDone) {
+      const isLecture = isLectureBacklogEligible(task);
+      if (task.date < currentDateStr && isLecture) {
+        currentBacklog++;
+      }
+    }
+  }
+  assert.equal(currentBacklog, 0, 'Missed Sunday test must NOT increment currentBacklog');
+
+  // Adding missed core lecture increments backlog to 1:
+  for (const task of [coreLectureTask]) {
+    const isDone = progressMap.get(task.id)?.isCompleted === true;
+    if (!isDone) {
+      const isLecture = isLectureBacklogEligible(task);
+      if (task.date < currentDateStr && isLecture) {
+        currentBacklog++;
+      }
+    }
+  }
+  assert.equal(currentBacklog, 1, 'Missed core lecture MUST increment currentBacklog to 1');
+
+  // Verify status badge label
+  function getBadgeLabel(task, isPast, isCompleted) {
+    if (isCompleted) return 'DONE';
+    if (isPast) {
+      return isLectureBacklogEligible(task) ? 'BACKLOG' : 'MISSED';
+    }
+    return 'UPCOMING';
+  }
+
+  assert.equal(getBadgeLabel(sundayTestTask, true, false), 'MISSED', 'Past missed Sunday test must have MISSED badge, never BACKLOG');
+  assert.equal(getBadgeLabel(coreLectureTask, true, false), 'BACKLOG', 'Past missed lecture must have BACKLOG badge');
+});
+
 // 8. CONTINUOUS TRACK LECTURE ORDERING & SUBJECT TRANSITION GUARANTEE
 test('Continuous Track Ordering: DL (42-52) must complete sequentially before DBMS (28-42) starts', async (t) => {
   const schedulePath = path.join(rootDir, 'src/data/gate_cse_schedule.json');

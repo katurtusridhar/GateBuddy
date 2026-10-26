@@ -39,6 +39,23 @@ export function TaskCard({ task }: TaskCardProps) {
     return { label: `SLOT ${task.slot}`, bg: "bg-indigo-950/70 border-indigo-700/60 text-indigo-300" };
   })();
 
+  // Strict Reschedule rule matching Android: Rescheduling & Backlog status is strictly for lectures only.
+  // Never for Daily Problem Solving, Daily Revision, Boosters, Sunday Tests, or Custom tasks.
+  const isCoreLecture =
+    !task.isBooster &&
+    !task.isRevision &&
+    !task.isSundayActivity &&
+    !task.isCustom &&
+    (task.type === "RECORDED" || task.type === "LIVE") &&
+    !task.title.toLowerCase().includes("problem solving") &&
+    !task.title.toLowerCase().includes("daily revision") &&
+    !task.title.toLowerCase().includes("booster") &&
+    !task.title.toLowerCase().includes("sunday test") &&
+    !task.title.toLowerCase().includes("pyq") &&
+    !task.subject.toLowerCase().includes("problem solving") &&
+    !task.subject.toLowerCase().includes("daily revision") &&
+    !task.subject.toLowerCase().includes("booster");
+
   // Status Badge matching Android TaskStatusBadge
   const statusInfo = (() => {
     if (task.isCompleted) {
@@ -48,7 +65,10 @@ export function TaskCard({ task }: TaskCardProps) {
       return { label: "RECOVERY", dotColor: "bg-amber-400", bg: "bg-amber-950/50 border-amber-500/50 text-amber-300" };
     }
     if (task.status === "MISSED" || task.isPast) {
-      return { label: "MISSED", dotColor: "bg-rose-400", bg: "bg-rose-950/50 border-rose-500/50 text-rose-300" };
+      if (isCoreLecture) {
+        return { label: "BACKLOG", dotColor: "bg-rose-400", bg: "bg-rose-950/50 border-rose-500/50 text-rose-300" };
+      }
+      return { label: "MISSED", dotColor: "bg-slate-400", bg: "bg-slate-800/80 border-slate-700 text-slate-400" };
     }
     if (task.status === "DUE_TODAY") {
       return { label: "TODAY", dotColor: "bg-sky-400", bg: "bg-sky-950/50 border-sky-500/50 text-sky-300" };
@@ -65,26 +85,6 @@ export function TaskCard({ task }: TaskCardProps) {
     }
     return `Core GATE CSE lecture • Slot ${task.slot} • +10 points`;
   })();
-
-  // Strict Reschedule rule matching Android: Rescheduling is strictly for lectures only.
-  // Never for Daily Problem Solving, Daily Revision, Boosters, Sunday Tests, or Custom tasks.
-  const isCoreLecture =
-    !task.isBooster &&
-    !task.isRevision &&
-    !task.isSundayActivity &&
-    !task.isCustom &&
-    task.type !== "SUNDAY_TEST" &&
-    task.type !== "SUNDAY_PYQ" &&
-    task.type !== "BOOSTER_PROBLEM_SOLVING" &&
-    task.type !== "BOOSTER_REVISION" &&
-    !task.title.toLowerCase().includes("problem solving") &&
-    !task.title.toLowerCase().includes("daily revision") &&
-    !task.title.toLowerCase().includes("booster") &&
-    !task.title.toLowerCase().includes("sunday test") &&
-    !task.title.toLowerCase().includes("pyq") &&
-    !task.subject.toLowerCase().includes("problem solving") &&
-    !task.subject.toLowerCase().includes("daily revision") &&
-    !task.subject.toLowerCase().includes("booster");
 
   const canReschedule =
     isCoreLecture &&

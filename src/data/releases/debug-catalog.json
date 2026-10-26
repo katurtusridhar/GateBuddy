@@ -1,31 +1,31 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-10-25T19:30:00.000Z",
+  "generatedAt": "2026-10-26T16:30:00.000Z",
   "channel": "debug",
   "packageName": "com.gatecse.companion.debug",
   "recommendedUpdate": {
-    "releaseId": "rel-1.0.9-b12",
-    "behaviorVersion": "1.0.9",
-    "installVersionCode": 12,
-    "installVersionName": "1.0.9",
-    "versionCode": 12,
-    "versionName": "1.0.9",
+    "releaseId": "rel-1.0.10-b13",
+    "behaviorVersion": "1.0.10",
+    "installVersionCode": 13,
+    "installVersionName": "1.0.10",
+    "versionCode": 13,
+    "versionName": "1.0.10",
     "releaseType": "standard",
-    "releaseDate": "2026-10-25T19:30:00.000Z",
+    "releaseDate": "2026-10-26T16:30:00.000Z",
     "verificationStatus": "verified",
     "changelog": {
-      "summary": "Full Recovery Lifecycle Sync & Realtime Mirror Precision",
+      "summary": "Strict Backlog Definition: Exclude Sunday Assessments and Reserve Backlog Exclusively for Missed Lectures",
       "highlights": [
-        "Synchronize both completed and active recoveries across app and web mirror",
-        "Zero-flicker mirror state: Eliminated static seed data causes of false 75% or 0% progress",
-        "Deterministic recovery parity guarantee preserving Sunday catch-up tasks",
-        "Automatic background & focus-based synchronization without manual intervention",
-        "Aligned execution score and points telemetry across all 5 Sunday tasks"
+        "Strict backlog isolation: Only missed syllabus lectures qualify as backlogs and count towards debt",
+        "Sunday Active Recall & Mock Tests display as MISSED when past uncompleted, never labeled BACKLOG",
+        "Sunday tests and non-lecture activities are permanently excluded from recovery assignments and backlog debt",
+        "Preparation Health reason and Backlog Status cards accurately reflect actual lecture backlogs",
+        "Full synchrony between Android companion and Web mirror without false backlog locks"
       ]
     },
-    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.9.apk",
-    "apkSizeBytes": 20941480,
-    "sha256": "ac2704adfce4ac4c0bf8642e92961a2853f71ad47bf8ffab87fbb27b61ef9d21",
+    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.10.apk",
+    "apkSizeBytes": 20941476,
+    "sha256": "abebe0483bacb2e495a1c3cbbca4b107191fc72caa0836b5adce1e9cb6c5d27f",
     "signingCertificate": {
       "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
       "subjectDn": "C=US, O=Android, CN=Android Debug"
@@ -42,6 +42,44 @@
     }
   },
   "releases": [
+    {
+      "releaseId": "rel-1.0.10-b13",
+      "behaviorVersion": "1.0.10",
+      "installVersionCode": 13,
+      "installVersionName": "1.0.10",
+      "versionCode": 13,
+      "versionName": "1.0.10",
+      "releaseType": "standard",
+      "releaseDate": "2026-10-26T16:30:00.000Z",
+      "verificationStatus": "verified",
+      "changelog": {
+        "summary": "Strict Backlog Definition: Exclude Sunday Assessments and Reserve Backlog Exclusively for Missed Lectures",
+        "highlights": [
+          "Strict backlog isolation: Only missed syllabus lectures qualify as backlogs and count towards debt",
+          "Sunday Active Recall & Mock Tests display as MISSED when past uncompleted, never labeled BACKLOG",
+          "Sunday tests and non-lecture activities are permanently excluded from recovery assignments and backlog debt",
+          "Preparation Health reason and Backlog Status cards accurately reflect actual lecture backlogs",
+          "Full synchrony between Android companion and Web mirror without false backlog locks"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.10.apk",
+      "apkSizeBytes": 20941476,
+      "sha256": "abebe0483bacb2e495a1c3cbbca4b107191fc72caa0836b5adce1e9cb6c5d27f",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
     {
       "releaseId": "rel-1.0.9-b12",
       "behaviorVersion": "1.0.9",
