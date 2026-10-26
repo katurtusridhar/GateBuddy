@@ -136,7 +136,7 @@ class AchievementManager(private val dao: ScheduleDao) {
         // Any past task before today that is not completed is debt, even if rescheduled to future Sundays
         val todayStr = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd"))
         val pastUncompletedCount = allTasks.count { t ->
-            t.date < todayStr && !t.isSundayActivity && !t.isBuffer && !t.isRevision && progressMap[t.id]?.isCompleted != true
+            t.date < todayStr && !t.isSundayActivity && !t.isBuffer && !t.isRevision && (t.type == "RECORDED" || t.type == "LIVE") && progressMap[t.id]?.isCompleted != true
         }
         if (pastUncompletedCount > 0 || currentBacklog > 0 || completedTasks.size < 5) {
             val backlogBadge = dao.getAchievementByCode("BACKLOG_CLEARED")

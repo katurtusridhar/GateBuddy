@@ -185,8 +185,19 @@ fun TaskCard(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                // Status chip
-                TaskStatusBadge(status = task.status, isBooster = task.isBooster)
+                // Status chip (Strictly BACKLOG only for missed core lectures; MISSED for Sunday tests/boosters/revisions)
+                val isLecture = !task.isSundayActivity &&
+                    !task.isBuffer &&
+                    !task.isRevision &&
+                    !task.isBooster &&
+                    !task.isCustom &&
+                    (task.type == TaskType.RECORDED || task.type == TaskType.LIVE) &&
+                    !task.subject.contains("Revision", ignoreCase = true) &&
+                    !task.subject.contains("Problem", ignoreCase = true) &&
+                    !task.title.contains("Revision", ignoreCase = true) &&
+                    !task.title.contains("Problem", ignoreCase = true)
+
+                TaskStatusBadge(status = task.status, isBooster = task.isBooster, isLecture = isLecture)
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -1119,17 +1130,21 @@ fun BacklogSequentialSchedulerDialog(
 }
 
 @Composable
-fun TaskStatusBadge(status: TaskStatus, isBooster: Boolean = false) {
+fun TaskStatusBadge(
+    status: TaskStatus,
+    isBooster: Boolean = false,
+    isLecture: Boolean = true
+) {
     val colors = GateTheme.colors
     val (label, bg, fg) = when (status) {
         TaskStatus.COMPLETED_ON_TIME -> Triple("DONE", colors.emeraldContainer, colors.emerald)
         TaskStatus.COMPLETED_LATE -> Triple("LATE", colors.skyContainer, colors.sky)
         TaskStatus.DUE_TODAY -> Triple("TODAY", colors.primaryContainer, colors.primary)
         TaskStatus.MISSED -> {
-            if (isBooster) {
-                Triple("MISSED", colors.cardBorder.copy(alpha = 0.35f), colors.textMuted)
-            } else {
+            if (isLecture && !isBooster) {
                 Triple("BACKLOG", colors.roseContainer, colors.rose)
+            } else {
+                Triple("MISSED", colors.cardBorder.copy(alpha = 0.35f), colors.textMuted)
             }
         }
         TaskStatus.RECOVERY_SCHEDULED -> Triple("RECOVERY", colors.amberContainer, colors.amber)

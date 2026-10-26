@@ -232,7 +232,16 @@ object AnalyticsEngine {
                 }
             } else {
                 val taskDate = LocalDate.parse(task.date, dateFormatter)
-                if (taskDate.isBefore(today)) {
+                val isLecture = !task.isSundayActivity &&
+                    !task.isBuffer &&
+                    !task.isRevision &&
+                    (task.type == "RECORDED" || task.type == "LIVE") &&
+                    !task.subject.contains("Revision", ignoreCase = true) &&
+                    !task.subject.contains("Problem", ignoreCase = true) &&
+                    !task.title.contains("Revision", ignoreCase = true) &&
+                    !task.title.contains("Buffer", ignoreCase = true) &&
+                    !task.title.contains("Problem", ignoreCase = true)
+                if (taskDate.isBefore(today) && isLecture) {
                     currentBacklog++
                 }
             }
@@ -422,7 +431,7 @@ object AnalyticsEngine {
         val healthReason = when (health) {
             PreparationHealth.ON_TRACK -> "On track: 7-day average of ${String.format("%.1f", averageDailyPoints)} pts/day and minimal backlog ($currentBacklog)."
             PreparationHealth.AT_RISK -> "Caution: 7-day average at ${String.format("%.1f", averageDailyPoints)} pts/day with $currentBacklog overdue tasks."
-            PreparationHealth.BEHIND -> "Behind schedule: Backlog is $currentBacklog missed tasks and 7-day average is ${String.format("%.1f", averageDailyPoints)} pts/day. Buffer recovery advised."
+            PreparationHealth.BEHIND -> "Behind schedule: Backlog is $currentBacklog missed lectures and 7-day average is ${String.format("%.1f", averageDailyPoints)} pts/day. Buffer recovery advised."
         }
 
         val explanations = buildList {

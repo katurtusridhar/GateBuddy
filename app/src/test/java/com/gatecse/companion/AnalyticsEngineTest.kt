@@ -452,4 +452,83 @@ class AnalyticsEngineTest {
         assertEquals("Adherence daily points today must be 26", 26, metrics.dailyPointsToday)
         assertEquals("Completed Sunday test must not be counted as backlog", 0, metrics.currentBacklog)
     }
+
+    @Test
+    fun testMissedSundayTestNeverCountedAsBacklog() {
+        val sundayDateStr = "2026-10-25"
+        val mondayDateStr = "2026-10-26" // Next day (Sunday is now past)
+
+        val sundayTest = ScheduleTaskEntity(
+            id = "TASK_0013",
+            date = sundayDateStr,
+            dayOfWeek = "Sun",
+            slot = 1,
+            subject = "Weekly Test & Active Recall",
+            type = "SUNDAY_TEST",
+            curNum = 0,
+            totalCount = 0,
+            title = "Weekly Active Recall & Mock Test",
+            details = "",
+            milestone = "",
+            sourcePage = 1,
+            isBuffer = false,
+            isRevision = true,
+            isSundayActivity = true
+        )
+        val sundayPyq = ScheduleTaskEntity(
+            id = "TASK_0014",
+            date = sundayDateStr,
+            dayOfWeek = "Sun",
+            slot = 2,
+            subject = "PYQ Practice & Mistake Analysis",
+            type = "SUNDAY_PYQ",
+            curNum = 0,
+            totalCount = 0,
+            title = "SUNDAY PYQ PRACTICE",
+            details = "",
+            milestone = "",
+            sourcePage = 1,
+            isBuffer = false,
+            isRevision = false,
+            isSundayActivity = true
+        )
+
+        // Neither task was completed on Sunday
+        val metricsMissedSunday = AnalyticsEngine.calculateAdherenceAndForecast(
+            currentDateStr = mondayDateStr,
+            allTasks = listOf(sundayTest, sundayPyq),
+            allProgress = emptyList(),
+            activeRecoveries = emptyList()
+        )
+
+        assertEquals("Missed Sunday mock test and PYQ must NEVER be counted as backlog", 0, metricsMissedSunday.currentBacklog)
+
+        // Now test with an actual core lecture missed
+        val coreLecture = ScheduleTaskEntity(
+            id = "TASK_0001",
+            date = "2026-10-24", // Saturday lecture missed
+            dayOfWeek = "Sat",
+            slot = 1,
+            subject = "Digital Logic",
+            type = "RECORDED",
+            curNum = 42,
+            totalCount = 52,
+            title = "Digital Logic — Lec 42/52",
+            details = "Core lecture",
+            milestone = "",
+            sourcePage = 1,
+            isBuffer = false,
+            isRevision = false,
+            isSundayActivity = false
+        )
+
+        val metricsMissedLecture = AnalyticsEngine.calculateAdherenceAndForecast(
+            currentDateStr = mondayDateStr,
+            allTasks = listOf(sundayTest, sundayPyq, coreLecture),
+            allProgress = emptyList(),
+            activeRecoveries = emptyList()
+        )
+
+        assertEquals("Only missed core lecture must be counted as backlog", 1, metricsMissedLecture.currentBacklog)
+    }
 }

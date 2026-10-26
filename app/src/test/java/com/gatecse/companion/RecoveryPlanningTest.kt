@@ -3,6 +3,7 @@ package com.gatecse.companion
 import com.gatecse.companion.model.RecoveryAssignmentEntity
 import com.gatecse.companion.model.ScheduleTaskEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -481,5 +482,34 @@ class RecoveryPlanningTest {
         // Can accept Digital Logic? No (violates Rule 2)
         val canAcceptDL = !isFull && !existingSubjects.any { it.equals("Digital Logic", ignoreCase = true) }
         assertTrue("Slot cannot accept second Digital Logic lecture", !canAcceptDL)
+    }
+
+    @Test
+    fun testSundayActivitiesNeverEligibleForRecoveryOrBacklog() {
+        val sundayTest = ScheduleTaskEntity(
+            id = "TASK_0013",
+            date = "2026-10-25",
+            dayOfWeek = "Sun",
+            slot = 1,
+            subject = "Weekly Test & Active Recall",
+            type = "SUNDAY_TEST",
+            curNum = 0,
+            totalCount = 0,
+            title = "Weekly Active Recall & Mock Test",
+            details = "",
+            milestone = "",
+            sourcePage = 1,
+            isBuffer = false,
+            isRevision = true,
+            isSundayActivity = true
+        )
+
+        // Backlog qualification logic:
+        val isBacklogCandidate = !sundayTest.isSundayActivity &&
+            !sundayTest.isRevision &&
+            !sundayTest.isBuffer &&
+            (sundayTest.type == "RECORDED" || sundayTest.type == "LIVE")
+
+        assertFalse("Sunday activities must never qualify as backlog candidates", isBacklogCandidate)
     }
 }

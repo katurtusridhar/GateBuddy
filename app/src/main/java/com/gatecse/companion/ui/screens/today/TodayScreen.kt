@@ -524,11 +524,12 @@ fun TodayScreen(
                     modifier = Modifier.weight(1f)
                 )
 
+                val totalBacklog = adherenceMetrics?.currentBacklog ?: unrescheduledBacklogs.size
                 MetricStatCard(
                     title = "Backlog Status",
-                    value = "${unrescheduledBacklogs.size + (adherenceMetrics?.currentBacklog ?: 0)}",
-                    subtitle = if (unrescheduledBacklogs.isEmpty() && (adherenceMetrics?.currentBacklog ?: 0) == 0) "Zero debt • Flawless" else "Recovery active",
-                    accentColor = if (unrescheduledBacklogs.isEmpty() && (adherenceMetrics?.currentBacklog ?: 0) == 0) colors.emerald else colors.rose,
+                    value = "$totalBacklog",
+                    subtitle = if (totalBacklog == 0) "Zero debt • Flawless" else if (unrescheduledBacklogs.isNotEmpty()) "${unrescheduledBacklogs.size} unrescheduled" else "Recovery active",
+                    accentColor = if (totalBacklog == 0) colors.emerald else colors.rose,
                     modifier = Modifier.weight(1f)
                 )
             }

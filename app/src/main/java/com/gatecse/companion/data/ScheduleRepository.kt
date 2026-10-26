@@ -61,8 +61,14 @@ class ScheduleRepository(
         try {
             val allTasks = dao.getAllScheduleTasks()
             val allProgress = dao.getAllProgress()
-            val backlog = dao.getActiveRecoveries().size
             val testsCount = dao.getAllAssessments().size
+            val today = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
+            val backlog = allTasks.count { t ->
+                val d = LocalDate.parse(t.date, dateFormatter)
+                val isLecture = !t.isSundayActivity && !t.isBuffer && !t.isRevision && (t.type == "RECORDED" || t.type == "LIVE") &&
+                    !t.subject.contains("Revision", ignoreCase = true) && !t.title.contains("Revision", ignoreCase = true)
+                d.isBefore(today) && isLecture && allProgress.none { it.taskId == t.id && it.isCompleted }
+            }
             achievementManager.evaluateAchievements(allTasks, allProgress, backlog, testsCount)
         } catch (_: Exception) {}
         res
@@ -311,6 +317,7 @@ class ScheduleRepository(
                 !task.isSundayActivity &&
                 !task.isRevision &&
                 !task.isBuffer &&
+                (task.type == "RECORDED" || task.type == "LIVE") &&
                 !task.subject.contains("Revision", ignoreCase = true) &&
                 !task.subject.contains("Problem", ignoreCase = true) &&
                 !task.title.contains("Revision", ignoreCase = true) &&
@@ -1028,7 +1035,9 @@ class ScheduleRepository(
             val testsCount = dao.getAllAssessments().size
             val backlog = allTasks.count { t ->
                 val d = LocalDate.parse(t.date, dateFormatter)
-                d.isBefore(today) && allProgress.none { it.taskId == t.id && it.isCompleted }
+                val isLecture = !t.isSundayActivity && !t.isBuffer && !t.isRevision && (t.type == "RECORDED" || t.type == "LIVE") &&
+                    !t.subject.contains("Revision", ignoreCase = true) && !t.title.contains("Revision", ignoreCase = true)
+                d.isBefore(today) && isLecture && allProgress.none { it.taskId == t.id && it.isCompleted }
             }
             achievementManager.evaluateAchievements(allTasks, allProgress, backlog, testsCount)
 
@@ -1061,7 +1070,9 @@ class ScheduleRepository(
             val testsCount = dao.getAllAssessments().size
             val backlog = allTasks.count { t ->
                 val d = LocalDate.parse(t.date, dateFormatter)
-                d.isBefore(today) && allProgress.none { it.taskId == t.id && it.isCompleted }
+                val isLecture = !t.isSundayActivity && !t.isBuffer && !t.isRevision && (t.type == "RECORDED" || t.type == "LIVE") &&
+                    !t.subject.contains("Revision", ignoreCase = true) && !t.title.contains("Revision", ignoreCase = true)
+                d.isBefore(today) && isLecture && allProgress.none { it.taskId == t.id && it.isCompleted }
             }
             achievementManager.evaluateAchievements(allTasks, allProgress, backlog, testsCount)
         }
