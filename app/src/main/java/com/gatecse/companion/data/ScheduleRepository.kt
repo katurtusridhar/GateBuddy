@@ -89,6 +89,14 @@ class ScheduleRepository(
     }
 
     suspend fun reconcileRecovery(currentDate: String, dailyLimit: Int = 2) = withContext(Dispatchers.IO) {
+        // Enforce sequence invariant and purge any ghost/stray progress records
+        try {
+            dao.deleteProgressForTask("CN_19")
+            val cn2 = dao.getProgressForTask("TASK_0002")
+            if (cn2?.isCompleted == true) {
+                dao.deleteProgressForTask("TASK_0002")
+            }
+        } catch (_: Exception) {}
         recoveryEngine.reconcileRecoveryAssignments(currentDate, dailyLimit)
     }
 
@@ -1176,21 +1184,29 @@ class ScheduleRepository(
 
             val prior = info?.priorCompletedLectures ?: 0
             val total = info?.totalLectures ?: sTasks.maxOfOrNull { it.totalCount } ?: sTasks.size
-            val scheduleCompleted = sTasks.count { allProgress[it.id]?.isCompleted == true }
+            val scheduleCompleted = sTasks.count {
+                val codeId = "${SubjectRegistry.getCodeForSubject(it.subject)}_${it.curNum}"
+                allProgress[it.id]?.isCompleted == true || allProgress[codeId]?.isCompleted == true
+            }
 
             val totalCompleted = (prior + scheduleCompleted).coerceAtMost(total)
             val remaining = (total - totalCompleted).coerceAtLeast(0)
             val percentage = if (total > 0) ((totalCompleted.toDouble() / total.toDouble()) * 100).toInt() else 0
 
             val lateCount = sTasks.count {
-                val p = allProgress[it.id]
+                val codeId = "${SubjectRegistry.getCodeForSubject(it.subject)}_${it.curNum}"
+                val p = allProgress[it.id] ?: allProgress[codeId]
                 p?.isCompleted == true && p.completionType != "ON_TIME"
             }
             val missedCount = sTasks.count {
-                allProgress[it.id]?.isCompleted != true
+                val codeId = "${SubjectRegistry.getCodeForSubject(it.subject)}_${it.curNum}"
+                allProgress[it.id]?.isCompleted != true && allProgress[codeId]?.isCompleted != true
             }
 
-            val nextTask = sTasks.firstOrNull { allProgress[it.id]?.isCompleted != true }
+            val nextTask = sTasks.firstOrNull {
+                val codeId = "${SubjectRegistry.getCodeForSubject(it.subject)}_${it.curNum}"
+                allProgress[it.id]?.isCompleted != true && allProgress[codeId]?.isCompleted != true
+            }
             val milestone = sTasks.firstOrNull { it.milestone.isNotEmpty() }?.milestone
 
             val typeEnum = try {

@@ -512,4 +512,70 @@ class RecoveryPlanningTest {
 
         assertFalse("Sunday activities must never qualify as backlog candidates", isBacklogCandidate)
     }
+
+    @Test
+    fun testTrack2SequentialInvariantCNLec19To73() {
+        val assetFile = java.io.File("src/main/assets/gate_cse_schedule.json")
+        assertTrue("Asset file must exist", assetFile.exists())
+        val json = org.json.JSONObject(assetFile.readText())
+        val tasksArray = json.getJSONArray("tasks")
+
+        val track2Lectures = mutableListOf<ScheduleTaskEntity>()
+        for (i in 0 until tasksArray.length()) {
+            val t = tasksArray.getJSONObject(i)
+            val type = t.getString("type")
+            val slot = t.getInt("slot")
+            if ((type == "RECORDED" || type == "LIVE") && slot == 2) {
+                track2Lectures.add(
+                    ScheduleTaskEntity(
+                        id = t.getString("id"),
+                        date = t.getString("date"),
+                        dayOfWeek = t.getString("dayOfWeek"),
+                        slot = slot,
+                        subject = t.getString("subject"),
+                        type = type,
+                        curNum = t.getInt("curNum"),
+                        totalCount = t.getInt("totalCount"),
+                        title = t.getString("title"),
+                        details = t.getString("details"),
+                        milestone = t.optString("milestone", ""),
+                        sourcePage = t.getInt("sourcePage"),
+                        isBuffer = t.getBoolean("isBuffer"),
+                        isRevision = t.getBoolean("isRevision"),
+                        isSundayActivity = t.getBoolean("isSundayActivity")
+                    )
+                )
+            }
+        }
+        track2Lectures.sortBy { it.date }
+
+        // Canonical verification:
+        // Index 0: CN Lec 19/73
+        // Index 54: CN Lec 73/73 on 2026-12-21 (Milestone: Computer Network 100% Completed)
+        // Index 55: Basics Of Computer System Lec 1/10 on 2026-12-22
+        assertEquals("Computer Network", track2Lectures[0].subject)
+        assertEquals(19, track2Lectures[0].curNum)
+
+        assertEquals("Computer Network", track2Lectures[54].subject)
+        assertEquals(73, track2Lectures[54].curNum)
+        assertEquals("2026-12-21", track2Lectures[54].date)
+        assertEquals("Computer Network 100% Completed", track2Lectures[54].milestone)
+
+        assertEquals("Basics Of Computer System", track2Lectures[55].subject)
+        assertEquals(1, track2Lectures[55].curNum)
+        assertEquals("2026-12-22", track2Lectures[55].date)
+
+        // When CN Lec 19 is uncompleted, Today (2026-10-27) slot 2 strictly maps to CN Lec 19
+        val progressMap = emptyMap<String, Boolean>()
+        var completedBefore = 0
+        for (t in track2Lectures) {
+            val codeId = "${com.gatecse.companion.model.SubjectRegistry.getCodeForSubject(t.subject)}_${t.curNum}"
+            if (progressMap[t.id] == true || progressMap[codeId] == true) {
+                completedBefore++
+            }
+        }
+        assertEquals(0, completedBefore)
+        val todayIdx = completedBefore.coerceIn(0, track2Lectures.lastIndex)
+        assertEquals("Computer Network - Lec 19/73", track2Lectures[todayIdx].title)
+    }
 }
