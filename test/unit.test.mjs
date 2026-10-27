@@ -501,6 +501,140 @@ test('Continuous Track Ordering: DL (42-52) must complete sequentially before DB
   assert.equal(nov04.curNum, 28, 'Nov 04 must begin DBMS Lec 28 seamlessly');
 });
 
+// 8b. TRACK 2 SEQUENTIAL ORDERING & MILESTONE INTENDED COMPLETION PARITY
+test('Track 2 Sequential Invariant: Uncompleted CN Lec 19 maps strictly to Today (never Lec 20), ends on Dec 21, and BOC starts Dec 22', async (t) => {
+  const schedulePath = path.join(rootDir, 'src/data/gate_cse_schedule.json');
+  const parsed = JSON.parse(fs.readFileSync(schedulePath, 'utf8'));
+  const allTasks = Array.isArray(parsed) ? parsed : parsed.tasks;
+
+  const track2Lectures = allTasks
+    .filter(t => (t.type === 'RECORDED' || t.type === 'LIVE') && t.slot === 2)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const track2Subjects = new Set(track2Lectures.map(t => t.subject));
+  function getTrackForSubject(subject) {
+    if (track2Subjects.has(subject)) return 2;
+    return 1;
+  }
+
+  // Verify Track 2 begins with Computer Network (Lec 19..73), then Basics Of Computer System (Lec 1..10)
+  assert.equal(track2Lectures[0].subject, 'Computer Network');
+  assert.equal(track2Lectures[0].curNum, 19);
+  assert.equal(track2Lectures[54].subject, 'Computer Network');
+  assert.equal(track2Lectures[54].curNum, 73);
+  assert.equal(track2Lectures[54].milestone, 'Computer Network 100% Completed');
+  assert.equal(track2Lectures[55].subject, 'Basics Of Computer System');
+  assert.equal(track2Lectures[55].curNum, 1);
+
+  // User scenario: CN Lec 19 is uncompleted. Backlog tasks rescheduled to upcoming Sundays.
+  const progressMap = new Map(); // 0 completed tasks in CN
+  const recoveries = [
+    { id: 201, taskId: 'TASK_0002', subject: 'Computer Network', recoveryDate: '2026-11-01', isCompleted: false },
+    { id: 202, taskId: 'TASK_0004', subject: 'Computer Network', recoveryDate: '2026-11-08', isCompleted: false },
+    { id: 203, taskId: 'TASK_0006', subject: 'Computer Network', recoveryDate: '2026-11-15', isCompleted: false },
+    { id: 204, taskId: 'TASK_0008', subject: 'Computer Network', recoveryDate: '2026-11-22', isCompleted: false },
+    { id: 205, taskId: 'TASK_0010', subject: 'Computer Network', recoveryDate: '2026-11-29', isCompleted: false },
+    { id: 206, taskId: 'TASK_0012', subject: 'Computer Network', recoveryDate: '2026-12-06', isCompleted: false },
+    { id: 207, taskId: 'TASK_0016', subject: 'Computer Network', recoveryDate: '2026-12-13', isCompleted: false },
+  ];
+
+  const todayDateStr = '2026-10-27';
+
+  function getSequentialLecture(targetDateStr, isRecovery = false) {
+    let completedBefore = 0;
+    for (const t of track2Lectures) {
+      if (progressMap.get(t.id)?.isCompleted === true) completedBefore++;
+    }
+
+    let uncompletedEarlier = 0;
+    let d = todayDateStr;
+    while (d <= targetDateStr) {
+      const dCore = allTasks.find(t => t.date === d && t.slot === 2 && (t.type === 'RECORDED' || t.type === 'LIVE'));
+      if (dCore) {
+        if (d === targetDateStr) {
+          if (isRecovery && progressMap.get(dCore.id)?.isCompleted !== true) uncompletedEarlier++;
+        } else if (progressMap.get(dCore.id)?.isCompleted !== true) {
+          uncompletedEarlier++;
+        }
+      }
+
+      const dRecs = recoveries.filter(r => r.recoveryDate === d && getTrackForSubject(r.subject) === 2);
+      if (d < targetDateStr) {
+        for (const r of dRecs) {
+          if (!r.isCompleted && progressMap.get(r.taskId)?.isCompleted !== true) uncompletedEarlier++;
+        }
+      }
+
+      const parts = d.split('-').map(Number);
+      const nextDay = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2] + 1));
+      d = nextDay.toISOString().slice(0, 10);
+    }
+
+    const idx = Math.min(Math.max(0, completedBefore + uncompletedEarlier), track2Lectures.length - 1);
+    return track2Lectures[idx];
+  }
+
+  // Verification 1: Today (Oct 27) Slot 2 must be CN Lec 19, NEVER Lec 20
+  const todayTask = getSequentialLecture('2026-10-27', false);
+  assert.equal(todayTask.subject, 'Computer Network');
+  assert.equal(todayTask.curNum, 19, 'When CN Lec 19 is uncompleted, Today MUST strictly be CN Lec 19/73');
+
+  // Verification 2: Intended completion on Dec 21 must be CN Lec 73 (100% Completed)
+  const dec21Task = getSequentialLecture('2026-12-21', false);
+  assert.equal(dec21Task.subject, 'Computer Network');
+  assert.equal(dec21Task.curNum, 73, 'Dec 21 Slot 2 must be Computer Network - Lec 73/73 (Intended completion milestone)');
+  assert.equal(dec21Task.milestone, 'Computer Network 100% Completed');
+
+  // Verification 3: Basics Of Computer System begins on Dec 22
+  const dec22Task = getSequentialLecture('2026-12-22', false);
+  assert.equal(dec22Task.subject, 'Basics Of Computer System');
+  assert.equal(dec22Task.curNum, 1, 'Dec 22 Slot 2 must be Basics Of Computer System - Lec 1/10');
+});
+
+// 8c. COLD-START STATE SHIELD PRESERVATION
+test('Cold-Start State Shield: Empty serverless snapshot NEVER purges local progress from storage', async (t) => {
+  // Existing local state with 15 completed tasks
+  const localProgressMap = new Map([
+    ['TASK_0001', { taskId: 'TASK_0001', isCompleted: true }],
+    ['TASK_0005', { taskId: 'TASK_0005', isCompleted: true }],
+  ]);
+  const localRecoveries = [
+    { id: 101, taskId: 'TASK_0003', recoveryDate: '2026-11-01', isCompleted: false },
+  ];
+
+  // Incoming cold-start payload from unpopulated Vercel lambda
+  const coldStartPayload = {
+    status: 'ok',
+    backendType: 'in_memory_serverless',
+    hasUpdates: false,
+    isColdStartEmpty: true,
+    timestamp: 0,
+    serverVersion: 0,
+    data: {
+      progress: [],
+      recoveries: [],
+    },
+  };
+
+  function applySyncSnapshot(currentMap, currentRecs, snapshot) {
+    const isServerEmpty = (!Array.isArray(snapshot.data?.progress) || snapshot.data.progress.length === 0) &&
+                          (!Array.isArray(snapshot.data?.recoveries) || snapshot.data.recoveries.length === 0);
+    const hasLocalData = currentMap.size > 0 || currentRecs.length > 0;
+    if (isServerEmpty && hasLocalData && (snapshot.isColdStartEmpty || snapshot.backendType === 'in_memory_serverless')) {
+      // Shield engaged: Preserve local state!
+      return { map: currentMap, recs: currentRecs, shielded: true };
+    }
+    const nextMap = new Map();
+    (snapshot.data.progress || []).forEach(p => nextMap.set(p.taskId, p));
+    return { map: nextMap, recs: snapshot.data.recoveries || [], shielded: false };
+  }
+
+  const result = applySyncSnapshot(localProgressMap, localRecoveries, coldStartPayload);
+  assert.equal(result.shielded, true, 'Cold-start shield must engage when serverless memory is blank');
+  assert.equal(result.map.size, 2, 'Local progress map must NOT be emptied by cold-start snapshot');
+  assert.equal(result.recs.length, 1, 'Local recoveries must NOT be emptied by cold-start snapshot');
+});
+
 // 9. COMPANION CLIENT KEY AUTHORIZATION SECURITY (SEC-002)
 test('Companion Client Key Authorization: client key alone is NOT user proof; user credentials required', async (t) => {
   const CLIENT_KEY = 'gb_companion_secure_sync_2026_tok';

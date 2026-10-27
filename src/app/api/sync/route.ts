@@ -196,16 +196,24 @@ export async function GET(req: NextRequest) {
   const durableTimestamp = maxDbTimestamp > 0 ? maxDbTimestamp : serverSyncState.lastUpdated;
   const durableVersion = maxDbTimestamp > 0 ? maxDbTimestamp : globalServerVersion;
 
+  const isServerColdStartEmpty =
+    !isDbActive &&
+    durableTimestamp === 0 &&
+    serverSyncState.progress.length === 0 &&
+    serverSyncState.recoveries.length === 0;
+
   const hasUpdates =
-    !since ||
-    sinceTs === 0 ||
-    durableTimestamp > sinceTs ||
-    (sinceVerNum > 0 && durableVersion > sinceVerNum);
+    !isServerColdStartEmpty &&
+    (!since ||
+      sinceTs === 0 ||
+      durableTimestamp > sinceTs ||
+      (sinceVerNum > 0 && durableVersion > sinceVerNum));
 
   return NextResponse.json({
     status: "ok",
     backendType: isDbActive ? "supabase_postgresql" : "in_memory_serverless",
     hasUpdates,
+    isColdStartEmpty: isServerColdStartEmpty,
     timestamp: durableTimestamp,
     serverVersion: durableVersion,
     dbErrors: dbErrors && dbErrors.length > 0 ? dbErrors : undefined,

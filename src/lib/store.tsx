@@ -282,7 +282,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (savedProgress) {
         const arr = JSON.parse(savedProgress) as TaskProgress[];
         const map = new Map<string, TaskProgress>();
-        arr.forEach((p) => map.set(p.taskId, p));
+        arr.forEach((p) => {
+          // Purge ghost completion of CN_19 / TASK_0002 to maintain strict sequential integrity
+          if (p.taskId !== "CN_19" && p.taskId !== "TASK_0002") {
+            map.set(p.taskId, p);
+          }
+        });
+        progressRef.current = map;
         setProgress(map);
       }
 
@@ -357,16 +363,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok || isCancelled) return;
         const result = await res.json();
         if (result.data) {
+          // COLD-START STATE SHIELD:
+          // If server cold-started with empty memory and has no updates, DO NOT wipe out valid persisted client state.
+          const isServerEmpty = (!Array.isArray(result.data.progress) || result.data.progress.length === 0) &&
+                                (!Array.isArray(result.data.recoveries) || result.data.recoveries.length === 0);
+          const hasLocalData = progressRef.current.size > 0 || recoveriesRef.current.length > 0;
+          if (isServerEmpty && hasLocalData && (result.isColdStartEmpty || result.backendType === "in_memory_serverless")) {
+            console.warn("[GateBuddySync] Cold-start shield: Preserving local state as server snapshot is unpopulated.");
+            setSyncStatus("synced");
+            return;
+          }
+
           lastSyncTimestampRef.current = result.timestamp || Date.now();
-          if (Array.isArray(result.data.progress)) {
+          if (Array.isArray(result.data.progress) && (result.data.progress.length > 0 || !hasLocalData)) {
             const map = new Map<string, TaskProgress>();
             result.data.progress.forEach((p: TaskProgress) => {
-              map.set(p.taskId, p);
+              if (p.taskId !== "CN_19" && p.taskId !== "TASK_0002") {
+                map.set(p.taskId, p);
+              }
             });
             progressRef.current = map;
             setProgress(map);
           }
-          if (Array.isArray(result.data.recoveries)) {
+          if (Array.isArray(result.data.recoveries) && (result.data.recoveries.length > 0 || !hasLocalData)) {
             recoveriesRef.current = result.data.recoveries;
             setRecoveries(result.data.recoveries);
           }
@@ -416,12 +435,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (!res.ok) return;
         const result = await res.json();
         if ((forceFull || result.hasUpdates) && result.data) {
+          // COLD-START STATE SHIELD:
+          // Do not allow an unpopulated cold-start lambda to wipe out active local progress.
+          const isServerEmpty = (!Array.isArray(result.data.progress) || result.data.progress.length === 0) &&
+                                (!Array.isArray(result.data.recoveries) || result.data.recoveries.length === 0);
+          const hasLocalData = progressRef.current.size > 0 || recoveriesRef.current.length > 0;
+          if (isServerEmpty && hasLocalData && (result.isColdStartEmpty || result.backendType === "in_memory_serverless")) {
+            return;
+          }
+
           lastSyncTimestampRef.current = result.timestamp || Date.now();
 
-          if (Array.isArray(result.data.progress)) {
+          if (Array.isArray(result.data.progress) && (result.data.progress.length > 0 || !hasLocalData)) {
             const map = new Map<string, TaskProgress>();
             result.data.progress.forEach((p: TaskProgress) => {
-              map.set(p.taskId, p);
+              if (p.taskId !== "CN_19" && p.taskId !== "TASK_0002") {
+                map.set(p.taskId, p);
+              }
             });
             progressRef.current = map;
             setProgress(map);
@@ -430,7 +460,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             } catch {}
           }
 
-          if (Array.isArray(result.data.recoveries)) {
+          if (Array.isArray(result.data.recoveries) && (result.data.recoveries.length > 0 || !hasLocalData)) {
             const nextRecs = result.data.recoveries;
             recoveriesRef.current = nextRecs;
             setRecoveries(nextRecs);

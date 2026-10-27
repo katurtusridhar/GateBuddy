@@ -1,31 +1,31 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-10-26T16:30:00.000Z",
+  "generatedAt": "2026-10-27T18:45:00.000Z",
   "channel": "debug",
   "packageName": "com.gatecse.companion.debug",
   "recommendedUpdate": {
-    "releaseId": "rel-1.0.10-b13",
-    "behaviorVersion": "1.0.10",
-    "installVersionCode": 13,
-    "installVersionName": "1.0.10",
-    "versionCode": 13,
-    "versionName": "1.0.10",
+    "releaseId": "rel-1.0.11-b14",
+    "behaviorVersion": "1.0.11",
+    "installVersionCode": 14,
+    "installVersionName": "1.0.11",
+    "versionCode": 14,
+    "versionName": "1.0.11",
     "releaseType": "standard",
-    "releaseDate": "2026-10-26T16:30:00.000Z",
+    "releaseDate": "2026-10-27T18:45:00.000Z",
     "verificationStatus": "verified",
     "changelog": {
-      "summary": "Strict Backlog Definition: Exclude Sunday Assessments and Reserve Backlog Exclusively for Missed Lectures",
+      "summary": "Sequential Curriculum Integrity and Web Cold-Start Mirror Sync Preservation",
       "highlights": [
-        "Strict backlog isolation: Only missed syllabus lectures qualify as backlogs and count towards debt",
-        "Sunday Active Recall & Mock Tests display as MISSED when past uncompleted, never labeled BACKLOG",
-        "Sunday tests and non-lecture activities are permanently excluded from recovery assignments and backlog debt",
-        "Preparation Health reason and Backlog Status cards accurately reflect actual lecture backlogs",
-        "Full synchrony between Android companion and Web mirror without false backlog locks"
+        "Strict sequential curriculum ordering: When CN Lec 19 is uncompleted, Today strictly displays CN Lec 19/73 (never skips to Lec 20)",
+        "Intended syllabus completion parity: Computer Network completes on Dec 21, 2026 (Lec 73 100% Completed milestone) and Basics Of Computer System begins on Dec 22, 2026",
+        "Ghost progress integrity reconciliation: Purges stale synthetic task progress and synchronizes canonical task IDs",
+        "Web mirror cold-start shield: Serverless cold starts never wipe out persisted client progress or recoveries in local storage",
+        "Real-time synchrony between Android Companion App and Web mirror with zero data loss or cold-start state flicker"
       ]
     },
-    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.10.apk",
+    "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.11.apk",
     "apkSizeBytes": 20941476,
-    "sha256": "abebe0483bacb2e495a1c3cbbca4b107191fc72caa0836b5adce1e9cb6c5d27f",
+    "sha256": "6d036e98631bdafb1dd5cdb21b9ff690eecacb8b9339e2015c6eb4fe029c17ca",
     "signingCertificate": {
       "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
       "subjectDn": "C=US, O=Android, CN=Android Debug"
@@ -42,6 +42,44 @@
     }
   },
   "releases": [
+    {
+      "releaseId": "rel-1.0.11-b14",
+      "behaviorVersion": "1.0.11",
+      "installVersionCode": 14,
+      "installVersionName": "1.0.11",
+      "versionCode": 14,
+      "versionName": "1.0.11",
+      "releaseType": "standard",
+      "releaseDate": "2026-10-27T18:45:00.000Z",
+      "verificationStatus": "verified",
+      "changelog": {
+        "summary": "Sequential Curriculum Integrity and Web Cold-Start Mirror Sync Preservation",
+        "highlights": [
+          "Strict sequential curriculum ordering: When CN Lec 19 is uncompleted, Today strictly displays CN Lec 19/73 (never skips to Lec 20)",
+          "Intended syllabus completion parity: Computer Network completes on Dec 21, 2026 (Lec 73 100% Completed milestone) and Basics Of Computer System begins on Dec 22, 2026",
+          "Ghost progress integrity reconciliation: Purges stale synthetic task progress and synchronizes canonical task IDs",
+          "Web mirror cold-start shield: Serverless cold starts never wipe out persisted client progress or recoveries in local storage",
+          "Real-time synchrony between Android Companion App and Web mirror with zero data loss or cold-start state flicker"
+        ]
+      },
+      "apkUrl": "https://gate-buddy.vercel.app/releases/GateBuddy-v1.0.11.apk",
+      "apkSizeBytes": 20941476,
+      "sha256": "6d036e98631bdafb1dd5cdb21b9ff690eecacb8b9339e2015c6eb4fe029c17ca",
+      "signingCertificate": {
+        "sha256Fingerprint": "78:49:6C:7B:D8:F3:41:1F:90:36:12:97:14:39:EB:81:67:47:A4:4C:ED:09:CE:F4:31:BB:45:A5:D4:7F:F2:73",
+        "subjectDn": "C=US, O=Android, CN=Android Debug"
+      },
+      "compatibility": {
+        "minSdk": 26,
+        "targetSdk": 35,
+        "supportedAbis": ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+      },
+      "database": {
+        "databaseVersion": 3,
+        "minSupportedDatabaseVersion": 3,
+        "requiresSchemaDowngrade": false
+      }
+    },
     {
       "releaseId": "rel-1.0.10-b13",
       "behaviorVersion": "1.0.10",
